@@ -282,21 +282,17 @@ while (filebuffer.p [filebuffer.len] == 10 || filebuffer.p [filebuffer.len] == 1
 ++filebuffer.len;
 write (localfd, filebuffer.p, filebuffer.len);
 
-} // if
+} // if rbound found
 
 
 
-//if (rbound > 0)
-  //  {send_txt (request.fd, "rear boundary found!!!", 0); exit (0);}
-
-
-} // while
+} // while wating for rear boundary
 
 
 close (localfd);
 rename (tempfile, request.fullpath.p);
 
-send_txt (request.fd, "rear boundary found, file completed", 0); exit (0);
+send_txt (request.fd, "rear boundary found, file completed", 0);
 
 
 } // if multipart reciever
