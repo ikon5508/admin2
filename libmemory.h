@@ -37,7 +37,7 @@ int getlast (const char *str, const char next, const int end);
 //const int maxbuffer = 100000;
 int search (const char *main, const char *minor, int start, int end);
 
-int searchM  (const char *main, const char *minor, int *offset,  int start, int end)
+int searchM  (const char *main, const char *minor, int *offset,  int start, int end);
 
 #endif
 
