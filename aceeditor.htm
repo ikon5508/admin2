@@ -9,19 +9,28 @@
         overflow: hidden;
     }
 
-    #editor {
+#editor {
         margin: 0;
-        position: absolute;
-        top: 70px;
-        bottom: 0;
+        position: fixed;
+        top: 0px;
+        bottom: 50px;
         left: 0;
         right: 0;
-    }
+}
+
+#tools {
+        margin: 0;
+        position: fixed;
+        bottom: 25px;
+        left: 0;
+        right: 0;
+
+
+}
+    
   </style>
 </head>
 <body>
-
-<input type="button" value="save" onclick="save()">
 
 <script>
 function save ()
@@ -46,18 +55,36 @@ document.body.appendChild(form);
 form.submit();   
 
 
+} // function save
+
+function toggle ()
+{
+window.alert ("Hello");
+
+    editor.session.setMode("ace/mode/c_cpp");
+
 }
 </script>
 
-
-
 <div id="editor">DELIMETER</div>
 
+
+<!--
+<div id="editor">DELIMETER</div>
+-->
+<div id="tools">
+hello tools bar
+<input type="button" value="save" onclick="save()">
+<input type="button" value="save" onclick="save()">
+<input type="button" value="test" onclick="toggle()">
+
+</div>
 <script src="/file/ace-builds/src-noconflict/ace.js" type="text/javascript" charset="utf-8"></script>
 <script>
     var editor = ace.edit("editor");
-    editor.setTheme("ace/theme/twilight");
-    editor.session.setMode("ace/mode/javascript");
+    editor.setTheme("ace/theme/terminal");
+    editor.session.setMode("ace/mode/c_cpp");
+
 </script>
 
 </body>

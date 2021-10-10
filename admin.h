@@ -1,5 +1,5 @@
 #include "libmemory.h"
-
+#include <dirent.h>
 const char *closehead = "HTTP/1.1 200 OK\nContent-Type: text/html\nConnection: close\nContent-Length: ";
 
 //const char *hello = "HTTP/1.1 200 OK\nContent-Type: text/plain\nContent-Length: 0000012\n\nHello world!";
@@ -32,7 +32,7 @@ struct string_data fullpath;
 char method;
 int keepalive;
 int fd;
-int code;
+int procint;
 char boundary [100];
 int boundlen;
 

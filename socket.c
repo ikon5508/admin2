@@ -135,7 +135,7 @@ size_t read_progress = 0;
 size_t write_progress = 0;
 
 size_t fsize = finfo.st_size;
-loggingf (200, "file size: %d\n", fsize);
+//loggingf (200, "file size: %d\n", fsize);
 
 char c_fbuffer [string_sz];
 struct buffer_data fbuff;
@@ -150,15 +150,15 @@ read_progress += fbuff.len;
 
 int interim_progress = sock_write (fd, fbuff.p, fbuff.len);
 
-loggingf (200, "read progress: %d - written: %d\n", read_progress, interim_progress);
+loggingf ("read progress: %d - written: %d\n", read_progress, interim_progress);
 
 
 } // while loop
-
+loggingf("file send completed\n");
 } // sendfile
 
 
-/*
+
 int sendfileold (const char *path, const int fd)
 {
 int locfd = open (path, O_RDONLY);
@@ -173,7 +173,7 @@ size_t read_progress = 0;
 size_t write_progress = 0;
 
 size_t fsize = finfo.st_size;
-loggingf (200, "file size: %d\n", fsize);
+//loggingf (200, "file size: %d\n", fsize);
 
 char c_fbuffer [string_sz];
 struct buffer_data fbuff;
@@ -186,9 +186,9 @@ while (read_progress < fsize)
 fbuff.len = read (locfd, fbuff.p, fbuff.max);
 read_progress += fbuff.len;
 
-int interim_progress = sock_write (fd, fbuff.p, fbuff.len);
+int interim_progress = sock_writeold (fd, fbuff.p, fbuff.len);
 
-loggingf (200, "read progress: %d - written: %d\n", read_progress, interim_progress);
+//loggingf (200, "read progress: %d - written: %d\n", read_progress, interim_progress);
 
 while (interim_progress < fbuff.len)
 {
@@ -196,24 +196,24 @@ while (interim_progress < fbuff.len)
 
 
 int cpylen = fbuff.len - interim_progress;
-loggingf (200, "incomplete writer leftover: %d\n", cpylen);
+//loggingf (200, "incomplete writer leftover: %d\n", cpylen);
 
 for (int i = interim_progress; i < fbuff.len; ++i)
 fbuff.p [i - interim_progress] = fbuff.p [i];
 
 fbuff.len = cpylen;
 
-interim_progress = sock_write (fd, fbuff.p, fbuff.len);
+interim_progress = sock_writeold (fd, fbuff.p, fbuff.len);
 
 
-loggingf (200, "(incomplete) progress: %d - written: %d\n", cpylen, interim_progress);
+//loggingf (200, "(incomplete) progress: %d - written: %d\n", cpylen, interim_progress);
 } // while
 
 
 } // while loop
 
-} // sendfile
-*/
+} // sendfileold
+
 
 int getfile (const char *path, const int fd)
 {

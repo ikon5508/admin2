@@ -10,8 +10,10 @@
 
 
 int fd = 0;
+int printfon = 1;
 
-int loggingf (const int level, const char *format, ...)
+
+int loggingf (const char *format, ...)
 {
 	
 va_list ap;
@@ -85,23 +87,16 @@ entry [len] = format [fplace];
 
 va_end(ap);
 
-if (level == 1)
-{
-printf ("%s", entry);
+
+if (printfon)
+    printf ("%.*s", len, entry);
+
 if (fd == 0)
 		return 0;
 
 write (fd, entry, len);
-//int idebug = debug;
-}
 
-if (level == 2)
-{
-if (fd == 0)
-		return 0;
-
-write (fd, entry, len);
-} // if
+return 1;
 } // loggingf
 
 
