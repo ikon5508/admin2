@@ -157,7 +157,7 @@ return -1;
 }
 
 
-
+/*
 int main ()
 {
 	int offset = 0;
@@ -224,3 +224,4 @@ rtn = searchM (b2, minor4, &offset, 0, 0);
 
 
 }
+*/
