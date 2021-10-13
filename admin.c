@@ -196,7 +196,7 @@ return args;
 
 
 
-int post_edit (const struct buffer_data mainbuff, const struct request_data request)
+int post_editold (const struct buffer_data mainbuff, const struct request_data request)
 {
 int d1, d2;
 int startdata = - 1;
@@ -224,7 +224,9 @@ char oldfname [string_sz];
 strcpy (oldfname, request.fullpath.p);
 strcat (oldfname, ".old");
 
+// search
 fbound = search (mainbuff.p, request.boundary, request.procint, mainbuff.len);
+// search
 if (fbound > - 1)
 {
 // get past name data, since only one object is sent
@@ -234,8 +236,9 @@ d2 = getnext (mainbuff.p, (char) 10, d1 + 1, mainbuff.len);
 startdata = d2;
 while (mainbuff.p [startdata] == 10 || mainbuff.p [startdata] == 13 || mainbuff.p [startdata] == '.')
     ++startdata;
-
+//search
 rbound = search (mainbuff.p, request.boundary, fbound + 1, mainbuff.len);
+// search
 if (rbound > - 1)
 {
 enddata = rbound - request.boundlen;
@@ -260,7 +263,6 @@ filedata.p [filedata.len] = mainbuff.p [i];
 ++filedata.len;
 } // for
 
-//send_txt (request.fd, filebuffer.p, filebuffer.len);
 if (saveold) rename (request.fullpath.p, oldfname);
 
 localfd = open (newfname, O_WRONLY | O_TRUNC| O_CREAT, S_IRUSR | S_IWUSR);
@@ -290,8 +292,180 @@ while (fbound == -1)
 {
 inbuff.len = sock_read (request.fd, inbuff.p, inbuff.max);
 if (inbuff.len == -1) {send_txt(request.fd,"1, reading timout",0); return -1; }
-
+//search
 fbound = search (inbuff.p, request.boundary, 0, inbuff.len);
+// search
+++cnt;
+if (cnt == 50) {send_txt(request.fd,"1, 1st boundary not found",0); return -1; }
+
+
+} // while fbound - 1
+
+d1 = getnext (inbuff.p, (char) 10, fbound, inbuff.len);
+d2 = getnext (inbuff.p, (char) 10, d1 + 1, inbuff.len);
+
+startdata = d2;
+while (inbuff.p [startdata] == 10 || inbuff.p [startdata] == 13 || inbuff.p [startdata] == '.')
+    ++startdata;
+}else{
+startdata = 0;
+} // if
+
+if (localfd == -1)
+{
+if (saveold) rename (request.fullpath.p, oldfname);
+localfd = open (newfname, O_WRONLY | O_TRUNC| O_CREAT, S_IRUSR | S_IWUSR);
+if (localfd < 0)  {send_txt(request.fd,"2, error opening newfile",0); return -1; }
+} // if
+
+
+//cnt = 0;
+
+// while loop until rbound > 0
+while (rbound == -1)
+{
+//++cnt;
+// search
+rbound = search (inbuff.p, request.boundary, startdata +1, inbuff.len);
+// search
+if (rbound == -1) enddata = inbuff.len;
+
+if (rbound > 0)
+{
+enddata = inbuff.len - request.boundlen;
+
+while (inbuff.p [enddata] == 10 || inbuff.p [enddata] == 13 || inbuff.p [enddata] == '-')
+    --enddata;
+
+++enddata;
+} // if rbound
+
+filedata.len = 0;
+for (int i = startdata; i < enddata; ++i)
+	{ filedata.p [filedata.len] = inbuff.p [i]; ++filedata.len; }
+
+startdata = 0;
+filedata.procint = write (localfd, filedata.p, filedata.len);
+if (filedata.procint != filedata.len)  {send_txt(request.fd,"error writing multipart-reciever",0); return -1; }
+
+if (rbound == -1)
+	inbuff.len = sock_read (request.fd, inbuff.p, inbuff.max);
+
+if (inbuff.len == -1)
+{loggingf ("split boundary!!!\n"); break;}
+	// work here
+	// work here
+} // while rbound
+
+close (localfd);
+rename (newfname, request.fullpath.p);
+send_txt (request.fd, "file recieved, multi-part reciever",0);
+return 1;
+} // post editold
+
+
+
+
+int post_edit (const struct buffer_data mainbuff, const struct request_data request)
+{
+
+int d1, d2;
+int startdata = - 1;
+int enddata = - 1;
+int fbound =-1, rbound=-1;
+int localfd = - 1;
+const int saveold = 1;
+
+char bd [string_sz];
+struct buffer_data inbuff;
+inbuff.p = bd;
+inbuff.max = string_sz;
+
+char fdata [string_sz];
+struct buffer_data filedata;
+filedata.p = fdata;
+filedata.max = string_sz;
+filedata.len = 0;
+
+char newfname [string_sz];
+strcpy (newfname, request.fullpath.p);
+strcat (newfname, ".new");
+
+char oldfname [string_sz];
+strcpy (oldfname, request.fullpath.p);
+strcat (oldfname, ".old");
+
+// search
+fbound = search (mainbuff.p, request.boundary, request.procint, mainbuff.len);
+// search
+if (fbound > - 1)
+{
+// get past name data, since only one object is sent
+d1 = getnext (mainbuff.p, (char) 10, fbound, mainbuff.len);
+d2 = getnext (mainbuff.p, (char) 10, d1 + 1, mainbuff.len);
+
+startdata = d2;
+while (mainbuff.p [startdata] == 10 || mainbuff.p [startdata] == 13 || mainbuff.p [startdata] == '.')
+    ++startdata;
+//search
+rbound = search (mainbuff.p, request.boundary, fbound + 1, mainbuff.len);
+// search
+if (rbound > - 1)
+{
+enddata = rbound - request.boundlen;
+
+while (mainbuff.p [enddata] == 10 || mainbuff.p [enddata] == 13 || mainbuff.p [enddata] == '-')
+    --enddata;
+
+++enddata;
+
+} // if rbound
+}// if fbound
+// done inumerating start and enddata in mainbuffer
+
+if (startdata > - 1)
+{
+if (enddata == - 1)
+    enddata = mainbuff.len;
+
+for (int i = startdata; i < enddata; ++i)
+{
+filedata.p [filedata.len] = mainbuff.p [i];
+++filedata.len;
+} // for
+
+if (saveold) rename (request.fullpath.p, oldfname);
+
+localfd = open (newfname, O_WRONLY | O_TRUNC| O_CREAT, S_IRUSR | S_IWUSR);
+if (localfd < 0)  {send_txt(request.fd,"1, error opening newfile",0); return -1; }
+
+filedata.procint = write (localfd, filedata.p, filedata.len);
+if (filedata.procint != filedata.len)  {send_txt(request.fd,"error writing single reciever",0); return -1; }
+
+if (rbound > - 1)
+{
+close (localfd);
+rename (newfname, request.fullpath.p);
+send_txt (request.fd, "File recieved, single reciever", 0);
+return 1;
+} // if
+} // if startdata
+// if single reciever
+
+// if fbound null then get it.
+// cycle through favico if necessary - carry on
+//     
+int cnt = 0;
+
+if (startdata == -1)
+{
+while (fbound == -1)
+{
+inbuff.len = sock_read (request.fd, inbuff.p, inbuff.max);
+if (inbuff.len == -1) {send_txt(request.fd,"1, reading timout",0); return -1; }
+//search
+fbound = search (inbuff.p, request.boundary, 0, inbuff.len);
+// search
 ++cnt;
 if (cnt == 50) {send_txt(request.fd,"1, 1st boundary not found",0); return -1; }
 
@@ -316,9 +490,30 @@ if (localfd < 0)  {send_txt(request.fd,"2, error opening newfile",0); return -1;
 } // if
 
 // while loop until rbound > 0
-while (rbound == -1)
+
+struct search_data srtn;
+cnt = 0;
+while (rbound <= -1)
 {
-rbound = search (inbuff.p, request.boundary, startdata +1, inbuff.len);
+// search
+srtn = searchM (inbuff.p, request.boundary, 0, startdata +1, inbuff.len);
+rbound = srtn.rtn;
+++cnt;
+loggingf ("#%d, rbound search %d\n", cnt, rbound);
+// searc
+
+if (rbound == -2)
+{
+enddata = inbuff.len - srtn.offset;
+
+while (inbuff.p [enddata] == 10 || inbuff.p [enddata] == 13 || inbuff.p [enddata] == '-')
+    --enddata;
+
+++enddata;
+
+loggingf ("multi-part search, boundary split, stress test, additional logic may be required\n");
+} // if rbound ==-2
+
 if (rbound == -1) enddata = inbuff.len;
 
 if (rbound > 0)
@@ -341,14 +536,20 @@ if (filedata.procint != filedata.len)  {send_txt(request.fd,"error writing multi
 if (rbound == -1)
 	inbuff.len = sock_read (request.fd, inbuff.p, inbuff.max);
 
+if (inbuff.len == -1)
+{loggingf ("split boundary!!!\n"); break;}
 	// work here
+
 } // while rbound
 
 close (localfd);
 rename (newfname, request.fullpath.p);
 send_txt (request.fd, "file recieved, multi-part reciever",0);
 return 1;
+
+
 } // post edit
+
 
 
 int main (int argc, char **argv)
@@ -398,7 +599,7 @@ if (request.method == 'G' && request.mode == file)
 
 
 if (request.method == 'P' && request.mode == edit)
-    procint = post_edit (inbuff, request);
+    procint = post_editold (inbuff, request);
 
 shutdown (connfd,  SHUT_WR);
 

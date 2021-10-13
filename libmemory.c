@@ -99,64 +99,110 @@ return -1;
 /*
 searchMP is search multi-part
 starts searching the minor string at offset
-if partial minor string is found searchMP will return -2 and offset will be set to # of chars found
  */
-
-int searchM  (const char *main, const char *minor, int *offset,  int start, int end)
+struct search_data searchM  (const char *main, const char *minor, int offset, int start, int end)
 {
+struct search_data rtn = {0, 0};
 
-int multi = 0;
-int smallcount = *offset;
-
-if (*offset) multi = 1;
-
+int minorlen = strlen (minor);
+int osearch = offset;
 
 if (end == 0)
     end = strlen (main);
 
 while (start < end)
-
 {
-if (main[start] == minor[smallcount])
+
+if (minor[offset] == 0)
+{
+
+rtn.rtn = start - 1;
+rtn.offset = 0;
+return rtn;
+} // if
+	
+	
+if (main[start] == minor[offset])
 {
 //printf("main: %c, minor: %c\n", main[lc], minor[sc]);
- 
-++smallcount;
+++offset;
+++start;
+continue;
+}else{
+offset = 0;      
+++start;
 
-} // end if
+if (osearch)
+	{rtn.rtn = -1; return rtn;}
 
-    
-if (minor[smallcount] == 0)
-return start;
-
-
-if (!main[start] == minor[smallcount])
-{
-	
-	smallcount = 0;
-
-} // if !==
- 
- ++start;    
+}	// end if
 
 } // end while
 
-//printf ("smallcount: %d\n", smallcount);
+
+//if (start == end)
+//{
+if (offset)
+{
+
+if (minorlen > offset)
+{
+//printf ("000major with midsearch to second step000\n");
+//start = -2;
+rtn.offset = offset;
+rtn.rtn = -2; 
+return rtn;
+}else{
+} 
+rtn.rtn = start -1;
+rtn.offset = 0;
+return rtn;
+} 
 
 
 
-if (multi)
-	return -1;
-
-if (smallcount)
-{*offset = smallcount; return -2;}
-
+if (!offset)
+{rtn.rtn = -1; return rtn;}
+	//printf ("000major end NO OFFSET000\n");
+//}
 
 
-return -1;
+}//searchM
+/*
+int main ()
+{
+
+	
+	char *b = "this bs is a big test";
+
+	printf ("%s, %d\n", b, strlen(b));
+
+struct search_data rtnm = searchM (b, "this", 0, 0, 0);
+
+int r = search (b, "this", 0, 0);
+
+printf ("%d, %d\n", rtnm.rtn, r);
+
+rtnm = searchM (b, "bs", 0, 0, 0);
+
+r = search (b, "bs", 0, 0);
+
+printf ("%d, %d\n", rtnm.rtn, r);
+
+rtnm = searchM (b, "big", 0, 0, 0);
+
+r = search (b, "big", 0, 0);
+
+printf ("%d, %d\n", rtnm.rtn, r);
+
+rtnm = searchM (b, "test", 0, 0, 0);
+
+r = search (b, "test", 0, 0);
+
+printf ("%d, %d\n", rtnm.rtn, r);
+
 }
-
-
+*/
 /*
 int main ()
 {
@@ -172,54 +218,62 @@ char *minor2 = "webformkit";
 char *minor3 = "webform";
 
 char *minor4 = "web";
-int rtn;
 
+struct search_data rtn = {0,0};
 
 printf ("major1: %s\nmajor2: %s\n", b1, b2);
 
 
 printf ("\n\nsearch 1, webformkitty\n");
 
-offset = 0;
-rtn = searchM (b1, minor1, &offset, 0, 0);
+//offset = 0;
+rtn = searchM (b1, minor1, rtn.offset, 0, 0);
 
-	printf ("result: %d, %d\n", rtn, offset);
+	printf ("result: %d, %d\n", rtn.rtn, rtn.offset);
 
-rtn = searchM (b2, minor1, &offset, 0, 0);
+rtn = searchM (b2, minor1, rtn.offset, 0, 0);
 
-	printf ("result: %d, %d\n", rtn, offset);
+	printf ("result: %d, %d\n", rtn.rtn, rtn.offset);
+
 
 printf ("\n\nsearch 2 webformkit\n");
-offset = 0;
-rtn = searchM (b1, minor2, &offset, 0, 0);
+rtn.offset = 0;
+rtn = searchM (b1, minor2, rtn.offset, 0, 0);
 
-	printf ("result: %d, %d\n", rtn, offset);
+	printf ("result: %d, %d\n", rtn.rtn, rtn.offset);
 
-rtn = searchM (b2, minor2, &offset, 0, 0);
+rtn = searchM (b2, minor2, rtn.offset, 0, 0);
 
-	printf ("result: %d, %d\n", rtn, offset);
+	printf ("result: %d, %d\n", rtn.rtn, rtn.offset);
 
+	
 
 printf ("\n\nsearch 3 webform\n");
-offset = 0;
-rtn = searchM (b1, minor3, &offset, 0, 0);
+rtn.offset = 0;
+rtn = searchM (b1, minor3, rtn.offset, 0, 0);
 
-	printf ("result: %d, %d\n", rtn, offset);
+	printf ("result: %d, %d\n", rtn.rtn, rtn.offset);
 
-rtn = searchM (b2, minor3, &offset, 0, 0);
+rtn = searchM (b2, minor3, 0, 0, 0);
 
-	printf ("result: %d, %d\n", rtn, offset);
+	printf ("result: %d, %d\n", rtn.rtn, rtn.offset);
 
 
 printf ("\n\nsearch 4 web\n");
-offset = 0;
-rtn = searchM (b1, minor4, &offset, 0, 0);
+rtn.offset = 0;
+rtn = searchM (b1, minor4, rtn.offset, 0, 0);
 
-	printf ("result: %d, %d\n", rtn, offset);
+	printf ("result: %d, %d\n", rtn.rtn, rtn.offset);
 
-rtn = searchM (b2, minor4, &offset, 0, 0);
+rtn = searchM (b2, minor4, 0, 0, 0);
 
-	printf ("result: %d, %d\n", rtn, offset);
+	printf ("result: %d, %d\n", rtn.rtn, rtn.offset);
+
+
+rtn = searchM ("the big test", "abc", 0, 0, 0);
+
+	printf ("abc big test result: %d, %d\n", rtn.rtn, rtn.offset);
+
 
 
 
