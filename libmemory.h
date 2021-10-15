@@ -30,6 +30,12 @@ int procint;
 int len;
 };
 
+struct search_data
+{
+int rtn;
+int offset;
+};
+
 int init_buffer (struct buffer_data *buffer, const int size);
 int getnext (const char *str, const char next, const int start, const int end);
 int midstr(const char *major, char *minor, int start, const int end);
@@ -37,7 +43,10 @@ int getlast (const char *str, const char next, const int end);
 //const int maxbuffer = 100000;
 int search (const char *main, const char *minor, int start, int end);
 
-int searchM  (const char *main, const char *minor, int *offset,  int start, int end);
+struct search_data searchM  (const char *main, const char *minor, int offset, int start, int end);
+
+
+int buffcatf (struct buffer_data *buff, const char *format, ...);
 
 #endif
 
