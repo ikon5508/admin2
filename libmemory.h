@@ -2,7 +2,7 @@
  #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
-
+#include "socket.h"
 #ifndef buffsz
 #define buffsz
 #define maxbuffer 100000
@@ -46,6 +46,7 @@ int search (const char *main, const char *minor, int start, int end);
 struct search_data searchM  (const char *main, const char *minor, int offset, int start, int end);
 
 
+int sock_buffwrite (const int connfd, struct buffer_data *out);
 int buffcatf (struct buffer_data *buff, const char *format, ...);
 
 #endif

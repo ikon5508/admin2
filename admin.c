@@ -16,7 +16,7 @@ outbuff.max = maxbuffer;
 
 outbuff.len = sprintf (outbuff.p, "%s%s%s%s%d\n\n%.*s", hthead, conttxt, connclose, contlen, len, len, txt);
 
-sock_write (fd, outbuff.p, outbuff.len);
+sock_buffwrite (fd, &outbuff);
 
 
 } // send_txt
@@ -74,9 +74,9 @@ loggingf ("%d bytes: %s", size, mime_txt);
 
 outbuff.len = sprintf (outbuff.p, "%s%s%s%d\n\n", hthead, mime_txt, contlen, size);
 
-sock_write (request.fd, outbuff.p, outbuff.len);
+sock_writeold (request.fd, outbuff.p, outbuff.len);
 
-sendfileold (request.fullpath.p, request.fd);
+sendfile (request.fullpath.p, request.fd);
 
 } // serv_file`
 
@@ -152,10 +152,10 @@ buffcatf (&out, "</body>\n</html>");
 struct string_data head;
 
 head.len = sprintf (head.p, "%s%s%s%d\n\n", hthead, conthtml, contlen, out.len);
-sock_write (request.fd, head.p, head.len);
-sock_write (request.fd, out.p, out.len);
+sock_writeold (request.fd, head.p, head.len);
+sock_buffwrite (request.fd, &out);
 
-
+closedir (dp);
 
 } // serv_dir
 
@@ -359,6 +359,10 @@ while (inbuff.p [enddata] == 10 || inbuff.p [enddata] == 13 || inbuff.p [enddata
 filedata.len = 0;
 for (int i = startdata; i < enddata; ++i)
 	{ filedata.p [filedata.len] = inbuff.p [i]; ++filedata.len; }
+startdata = 0;
+
+filedata.procint = write (localfd, filedata.p, filedata.len);
+if (filedata.procint != filedata.len)  {send_txt(request.fd,"error writing multipart-reciever",0); return -1; }
 
 
 if (rbound == -1)
@@ -367,37 +371,38 @@ if (rbound == -1)
 if (inbuff.len == -1)
 {
 loggingf ("split boundary!!!\n");
-cnt = 1;
-filedata.len -= request.boundlen;
+
+// cycle here to find true boundary wont be boundlen
+
+loggingf ("boundlen:  %d: [%s]\n%.*s\n", request.boundlen, request.boundary, request.boundlen, request.boundary);
+
+struct stat finfo;
+fstat (localfd, &finfo);
+
+ftruncate (localfd, finfo.st_size - request.boundlen - 5);
+
+// added additional 5 here, to accomodate the -----...seems imprecise
+// if fails again e.g. on chrome based browsers
+// use lseek reset fpos, read last 100 
+//
+// redermine and calculate truncate len
 
 
-while (filedata.p [filedata.len] == 10 || filedata.p [filedata.len] == 13 || filedata.p [filedata.len] == '-')
-    --filedata.len;
-
-++filedata.len;;
-break;
-}
-	// work here
+close (localfd);
+rename (newfname, request.fullpath.p);
 
 
+send_txt (request.fd, "CHECK DATA-split boundary file recieved, multi-part reciever CHECK DATA",0);
 
-startdata = 0;
-filedata.procint = write (localfd, filedata.p, filedata.len);
-if (filedata.procint != filedata.len)  {send_txt(request.fd,"error writing multipart-reciever",0); return -1; }
-
-
+return 1;
+} // if timeout finish
 } // while rbound
 
 close (localfd);
 rename (newfname, request.fullpath.p);
 
-if (cnt)
-{
-send_txt (request.fd, "CHECK DATA-split boundary file recieved, multi-part reciever CHECK DATA",0);
-}else{
 send_txt (request.fd, "file recieved, multi-part reciever",0);
 return 1;
-} // if check data
 } // post edit
 
 int get_config (const struct args_data args, const struct request_data request)
@@ -423,9 +428,9 @@ struct string_data head;
 
 
 head.len = sprintf (head.p, "%s%s%s%s%d\n\n", hthead, connka, conthtml, contlen, out.len);
-sock_write (request.fd, head.p, head.len);
+sock_writeold (request.fd, head.p, head.len);
 
-sock_write (request.fd, out.p, out.len);
+sock_writeold (request.fd, out.p, out.len);
 return 100;
 } // get config
 
@@ -604,8 +609,8 @@ head.len = sprintf (head.p, "%s%s%s%d\n\n", hthead, conthtml, contlen, outbuff.l
 //char diagnostic [maxbuffer];
 //sprintf (diagnostic, "URI(%d): %s\n Path: %s Fullpath: %s", request.uri.len, request.uri.p, request.path.p, request.fullpath.p);
 //send_txt (fd, outbuff.p, outbuff.len);
-sock_write (request.fd, head.p, head.len);
-sock_write (request.fd, outbuff.p, outbuff.len);
+sock_writeold (request.fd, head.p, head.len);
+//sock_buffwrite (request.fd, &outbuff);
 return 1;
 
 } // get_edit_file

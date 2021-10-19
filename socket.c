@@ -36,90 +36,6 @@ if (backdoorfd < 0)
 
 } // init_sockbackdoor
 
-int sock_write (const int connfd, const char *buffer, const int size)
-{
-time_t basetime;
-time (&basetime);
-
-int writelen = -1;
-int write_progress = 0;
-  
-while (writelen < 0)
-{
-writelen = write (connfd, buffer, size);
-
-if (writelen == -1)
-{
-usleep (1000);
-time_t deadtime;
-time (&deadtime);
-deadtime -= basetime;
-
-if (deadtime >= timeout)
-	{return -1;}
-} // if -1
-} // while
-
-write_progress += writelen;
-/*
-if (backdoorfd)
-{
-write (backdoorfd, "\n......write......\n", 19);
-write (backdoorfd, buffer, writelen);
-} //if
-*/
-char smbuffer [string_sz];
-struct buffer_data smbuff;
-smbuff.p = smbuffer;
-smbuff.max = string_sz;
-smbuff.len = 0;
-
-
-while (write_progress < size)
-{
-int cpylen = size - write_progress;
-int minorpos;
-
-for (int i = write_progress; i < size; ++i)
-{
-minorpos = i - write_progress;
-smbuff.p [minorpos] = buffer [i];
-if (minorpos == smbuff.max)
-    break;
-} //for
-smbuff.len = minorpos;
-
-writelen = -1;
-time (&basetime);
-while (writelen < 0)
-{
-writelen = write (connfd, smbuff.p, smbuff.len);
-
-if (writelen == -1)
-{
-usleep (1000);
-time_t deadtime;
-time (&deadtime);
-deadtime -= basetime;
-
-if (deadtime >= timeout)
-	{return -1;}
-} // if -1
-} // while write -1
-
-write_progress += writelen;
-/*
-if (backdoorfd)
-{
-write (backdoorfd, "\n......write......\n", 19);
-write (backdoorfd, smbuff.p, writelen);
-} //if
-*/
-} // while write_progress < size
-
- 
-return write_progress;
-} // sock_write
 
 int sendfile (const char *path, const int fd)
 {
@@ -148,55 +64,11 @@ while (read_progress < fsize)
 fbuff.len = read (locfd, fbuff.p, fbuff.max);
 read_progress += fbuff.len;
 
-int interim_progress = sock_write (fd, fbuff.p, fbuff.len);
-
-loggingf ("read progress: %d - written: %d\n", read_progress, interim_progress);
-
-
-} // while loop
-loggingf("file send completed\n");
-} // sendfile
-
-
-
-int sendfileold (const char *path, const int fd)
-{
-int locfd = open (path, O_RDONLY);
-if (locfd < -1)
-    return -1;
-
-struct stat finfo;
-fstat (locfd, &finfo);
-
-size_t read_progress = 0;
-
-size_t write_progress = 0;
-
-size_t fsize = finfo.st_size;
-//loggingf (200, "file size: %d\n", fsize);
-
-char c_fbuffer [string_sz];
-struct buffer_data fbuff;
-fbuff.p = c_fbuffer;
-fbuff.max = string_sz;
-
-
-while (read_progress < fsize)
-{  
-fbuff.len = read (locfd, fbuff.p, fbuff.max);
-read_progress += fbuff.len;
-
 int interim_progress = sock_writeold (fd, fbuff.p, fbuff.len);
-
-//loggingf (200, "read progress: %d - written: %d\n", read_progress, interim_progress);
 
 while (interim_progress < fbuff.len)
 {
-//loggingf (200, "additional logic required <int sendfile>\n"); 
-
-
 int cpylen = fbuff.len - interim_progress;
-//loggingf (200, "incomplete writer leftover: %d\n", cpylen);
 
 for (int i = interim_progress; i < fbuff.len; ++i)
 fbuff.p [i - interim_progress] = fbuff.p [i];
@@ -204,14 +76,10 @@ fbuff.p [i - interim_progress] = fbuff.p [i];
 fbuff.len = cpylen;
 
 interim_progress = sock_writeold (fd, fbuff.p, fbuff.len);
-
-
-//loggingf (200, "(incomplete) progress: %d - written: %d\n", cpylen, interim_progress);
 } // while
 
-
 } // while loop
-
+close (locfd);
 } // sendfileold
 
 

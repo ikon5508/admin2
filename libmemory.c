@@ -3,6 +3,85 @@
 #include <stdlib.h>
 #include <stdarg.h>
 
+int sock_buffwrite (const int connfd, struct buffer_data *out)
+{
+int wlen = 0;
+int progress = 0;
+int offset = 0;
+int i;
+
+int written = sock_writeold (connfd, out->p, out->len);
+if (written == out->len)
+	return written;
+
+progress = written;
+
+while (progress < out->len)
+{
+wlen = 0;
+for (i = offset; i < string_sz - offset; ++i)
+{
+++wlen;
+out->p [i] = out->p [wlen + progress];
+if (i + offset == string_sz)
+	break;
+
+if (progress + wlen == out->len)
+       break;
+
+}// for reset op 
+int totalwrite = wlen + offset;
+
+written = sock_writeold (connfd, out->p, totalwrite);
+
+if (written == totalwrite)
+	offset = 0;
+
+if (written < totalwrite)
+{
+offset = wlen - written;
+
+for (i = 0; i < offset; ++i)
+{
+out->p[i] = out->p[i + written];
+
+
+} // for copy offset
+
+} // if incomplete writee
+progress += wlen;
+
+
+} // while progress <
+/*
+time_t basetime;
+time (&basetime);
+
+int writelen = -1;
+int write_progress = 0;
+  
+while (writelen < 0)
+{
+writelen = write (connfd, buffer, size);
+
+if (writelen == -1)
+{
+usleep (1000);
+time_t deadtime;
+time (&deadtime);
+deadtime -= basetime;
+
+if (deadtime >= timeout)
+	{return -1;}
+} // if -1
+} // while
+
+
+
+*/
+ 
+} // sock_buffwrite
+
 int getlast (const char *str, const char next, const int end)
 {
 const int debug = 0;

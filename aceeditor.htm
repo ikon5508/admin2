@@ -7,7 +7,8 @@
   <style type="text/css" media="screen">
     body {
         overflow: hidden;
-    }
+font-family: Arial, Helvetica, sans-serif;
+}
 
 #editor {
         margin: 0;
@@ -33,6 +34,7 @@
 <body>
 
 <script>
+var copiedtext;
 function save ()
 {
 //window.alert ("test function");
@@ -57,27 +59,73 @@ form.submit();
 
 } // function save
 
-function toggle ()
+function toggle_HTML ()
 {
-window.alert ("Hello");
+//window.alert ("Hello");
 
-    editor.session.setMode("ace/mode/c_cpp");
+    editor.session.setMode("ace/mode/html");
 
 }
+function theme (evt) {
+window.alert (evt.target.value);
+if (evt.target.value === "chaos")
+editor.setTheme("ace/theme/chaos");
+
+
+if (evt.target.value === "terminal")
+editor.setTheme("ace/theme/terminal")
+
+if (evt.target.value === "monokai")
+   editor.setTheme("ace/theme/monokai") 
+    
+    
+}
+
+function test () {
+    window.alert (copiedtext)
+}
+
+function cut () {
+    editor.execCommand ("cut");
+}
+
+function copy () {
+    copiedtext = editor.getCopyText ();
+    //editor.execCommand ("copy");
+    navigator.clipboard.writeText (copiedtext);
+}
+
+function paste () {
+//    editor.execCommand ("paste");
+//navigator.clipboard.readText ();
+    
+    editor.insert (copiedtext);
+    
+}
+
 </script>
 
 <div id="editor">DELIMETER</div>
 
 
-<!--
-<div id="editor">DELIMETER</div>
--->
+
 <div id="tools">
 hello tools bar
 <input type="button" value="save" onclick="save()">
-<input type="button" value="save" onclick="save()">
-<input type="button" value="test" onclick="toggle()">
+<input type="button" value="test" onclick="test()">
+<input type="button" value="HTML" onclick="toggle_HTML()">
 
+<select onchange="theme(event)">
+  <option>terminal</option>  
+  
+    <option>monokai</option>  
+     <option>chaos</option> 
+      
+</select>
+
+<input type="button" value="cut" onclick="cut()">
+<input type="button" value="copy" onclick="copy()">
+<input type="button" value="paste" onclick="paste()">
 </div>
 <script src="/file/ace-builds/src-noconflict/ace.js" type="text/javascript" charset="utf-8"></script>
 <script>
