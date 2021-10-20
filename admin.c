@@ -610,7 +610,7 @@ head.len = sprintf (head.p, "%s%s%s%d\n\n", hthead, conthtml, contlen, outbuff.l
 //sprintf (diagnostic, "URI(%d): %s\n Path: %s Fullpath: %s", request.uri.len, request.uri.p, request.path.p, request.fullpath.p);
 //send_txt (fd, outbuff.p, outbuff.len);
 sock_writeold (request.fd, head.p, head.len);
-//sock_buffwrite (request.fd, &outbuff);
+sock_buffwrite (request.fd, &outbuff);
 return 1;
 
 } // get_edit_file
