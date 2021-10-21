@@ -433,6 +433,13 @@ sock_writeold (request.fd, head.p, head.len);
 sock_writeold (request.fd, out.p, out.len);
 return 100;
 } // get config
+)
+/*	send_err ("HTTP/1.1 410 GONE\n");
+
+
+if (request.mode == err && request.code == 500)
+	send_err ("HTTP/1.1 500 ERROR\n");
+*/
 
 int main (int argc, char **argv)
 {

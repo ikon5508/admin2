@@ -9,6 +9,12 @@
         overflow: hidden;
 font-family: Arial, Helvetica, sans-serif;
 }
+.button {
+    padding-left:20px;
+  padding-right:20px;
+    font-size:18px;
+}
+
 
 #editor {
         margin: 0;
@@ -22,10 +28,10 @@ font-family: Arial, Helvetica, sans-serif;
 #tools {
         margin: 0;
         position: fixed;
-        bottom: 25px;
+        bottom: 15px;
         left: 0;
         right: 0;
-
+font-size:18px;
 
 }
     
@@ -35,6 +41,19 @@ font-family: Arial, Helvetica, sans-serif;
 
 <script>
 var copiedtext;
+
+
+var str = new String (window.location);
+var i;
+for (i=str.length -1; i > -1; --i) {
+if (str[i] == '/'){
+    
+break;
+}
+}
+let n = str.slice (i + 1);
+window.document.title = (n);
+
 function save ()
 {
 //window.alert ("test function");
@@ -72,31 +91,22 @@ function theme (evt) {
 let path = "ace/theme/" + evt.target.value;
 editor.setTheme(path);
 
-//if (evt.target.value === "chaos")
-//editor.setTheme("ace/theme/chaos");
-
-
-//if (evt.target.value === "terminal")
-//editor.setTheme("ace/theme/terminal")
-
-//if (evt.target.value === "monokai")
-//   editor.setTheme("ace/theme/monokai") 
-    
-    
 }
 
 function test () {
-    window.alert (copiedtext)
+   window.alert (window.location)
+
 }
 
 function cut () {
-    editor.execCommand ("cut");
+copiedtext = editor.getCopyText ();
+editor.insert ("");
 }
 
 function copy () {
     copiedtext = editor.getCopyText ();
     //editor.execCommand ("copy");
-    navigator.clipboard.writeText (copiedtext);
+  //  navigator.clipboard.writeText (copiedtext);
 }
 
 function paste () {
@@ -111,6 +121,7 @@ function fntsz (evt) {
    let ssz = evt.target.value + "px"; 
     document.getElementById('editor').style.fontSize=(ssz);
 }
+
 </script>
 
 <div id="editor">DELIMETER</div>
@@ -118,19 +129,33 @@ function fntsz (evt) {
 
 
 <div id="tools">
-hello tools bar
-<input type="button" value="save" onclick="save()">
-<input type="button" value="test" onclick="test()">
-<input type="button" value="HTML" onclick="toggle_HTML()">
 
-<select onchange="theme(event)">
-  <option>terminal</option>  
-  
-    <option>monokai</option>  
-     <option>chaos</option> 
-      
+<input type="button" class="button" value="save" onclick="save()">
+<input type="button" class="button" value="test" onclick="test()">
+<input type="button" class="button" value="HTML" onclick="toggle_HTML()">
+
+<select class="button" onchange="theme(event)">
+<option>terminal</option>  
+<option>monokai</option>  
+<option>chaos</option> 
+<option>tomorrow_night_bright</option>
+<option>vibrant_ink</option>     
+<option>twilight</option>
+<option>tomorrow_night_blue</option>
+<option>tomorrow_night</option>
+<option>solarized_dark</option>
+<option>pastel_on_dark</option>
+<option>one_dark</option>
+<option>nord_dark</option>
+<option>mono_industrial</option>
+<option>kr_theme</option>
+<option>gob</option>
+<option>cobalt</option>
+<option>dracula</option>
+<option>clouds_midnight</option>
+<option>ambiance</option>
 </select>
-<select onchange="fntsz(event)">
+<select class="button" onchange="fntsz(event)">
     <option>12</option>
     <option>14</option>
     <option>16</option>
@@ -139,16 +164,15 @@ hello tools bar
     <option>22</option>
     <option>24</option>
 </select>
-<input type="button" value="cut" onclick="cut()">
-<input type="button" value="copy" onclick="copy()">
-<input type="button" value="paste" onclick="paste()">
+<input type="button" class="button" value="cut" onclick="cut()">
+<input type="button" class="button" value="copy" onclick="copy()">
+<input type="button" class="button" value="paste" onclick="paste()">
 </div>
 <script src="/file/ace-builds/src-noconflict/ace.js" type="text/javascript" charset="utf-8"></script>
 <script>
     var editor = ace.edit("editor");
     editor.setTheme("ace/theme/terminal");
     editor.session.setMode("ace/mode/c_cpp");
-
 </script>
 
 </body>
