@@ -1,19 +1,24 @@
+#include <string.h>
+#include <stdlib.h>
+#include <stdarg.h>
 #include <stdio.h>
- #include <stdlib.h>
+#include <sys/socket.h>
+#include <stdlib.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <netinet/tcp.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <errno.h>
 #include <string.h>
 #include <unistd.h>
-#include "socket.h"
-#ifndef buffsz
-#define buffsz
+#include <time.h>
+
 #define maxbuffer 100000
 
 #define string_sz 1000
-
-#endif
-
-
-#ifndef libfunc
-#define libfunc 2
 
 struct buffer_data
 {
@@ -40,20 +45,19 @@ int init_buffer (struct buffer_data *buffer, const int size);
 int getnext (const char *str, const char next, const int start, const int end);
 int midstr(const char *major, char *minor, int start, const int end);
 int getlast (const char *str, const char next, const int end);
-//const int maxbuffer = 100000;
-int search (const char *main, const char *minor, int start, int end);
-
-struct search_data searchM  (const char *main, const char *minor, int offset, int start, int end);
-
-
+int searchold (const char *main, const char *minor, int start, int end);
+int search (const char *main, const char *minor, const int start, int end);
+struct search_data searchM  (const char *main, const char *minor,const int start, int end);
 int sock_buffwrite (const int connfd, struct buffer_data *out);
 int buffcatf (struct buffer_data *buff, const char *format, ...);
-
-#endif
-
-
-#ifndef delim_char
-#define delim_char
-#define delimchar 21
-#endif
-
+int prepsocket (const int PORT);
+int sock_setnonblock (const int fd);
+int sock_writeold (const int connfd, const char *buffer, const int size);
+int sock_read (const int connfd, char *buffer, int size);
+int sock_write (const int connfd, char *out, const int len);
+int sendfile (const char *path, const int fd);
+int init_sockbackdoor (const char *init);
+int init_log (const char *path);
+int loggingf (const char *format, ...);
+void close_log ();
+extern const int timeout;
