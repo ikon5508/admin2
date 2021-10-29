@@ -21,7 +21,7 @@ return 1;
 
 int serv_file (const struct args_data args, const struct request_data request, const int size)
 {
-int dot = getlast (request.path.p, '.', request.path.len);
+int dot = getlast (request.path.p, (int) '.');
 
 
 char outbuffer [string_sz];
@@ -33,45 +33,45 @@ outbuff.max = string_sz;
 char mime_ext[10] = "";
 const char *mime_txt;
 
-midstr (request.path.p, mime_ext, dot, request.path.len);
+memcpy (mime_ext, request.path.p + dot, request.path.len - dot);
 
 int i = 0;
 
-if (!strcmp(mime_ext, ".txt"))
+if (strcmp(mime_ext, ".txt") == 0)
 {i=1;  mime_txt = conttxt;}
 
 
-if (!strcmp(mime_ext, ".htm"))
+if (strcmp(mime_ext, ".htm") == 0)
 {i=1;  mime_txt = conthtml;}
 
 
-if (!strcmp(mime_ext, ".html"))
+if (strcmp(mime_ext, ".html") == 0)
 {i=1;  mime_txt = conthtml;}
 
-if (!strcmp(mime_ext, ".js"))
+if (strcmp(mime_ext, ".js") == 0)
 {i=1;  mime_txt = contjava;}
 
-if (!strcmp(mime_ext, ".jpg"))
+if (strcmp(mime_ext, ".jpg") == 0)
 {i=1;  mime_txt = contjpg;}
 
-if (!strcmp(mime_ext, ".jpeg"))
+if (strcmp(mime_ext, ".jpeg") == 0)
 {i=1;  mime_txt = contjpg;}
 
-if (!strcmp(mime_ext, ".css"))
+if (strcmp(mime_ext, ".css") == 0)
 {i=1;  mime_txt = contcss;}
 
-if (!strcmp(mime_ext, ".ico"))
+if (strcmp(mime_ext, ".ico") == 0)
 {i=1;  mime_txt = conticon;}
 
-if (!i)
+if (i == 0)
 {mime_txt = conttxt;}
+
+//loggingf ("%s\n", mime_txt);
 
 //struct stat finfo;
 //stat (request.fullpath.p, &finfo);
-loggingf ("%d bytes: %s", size, mime_txt);
 
 outbuff.len = sprintf (outbuff.p, "%s%s%s%d\n\n", hthead, mime_txt, contlen, size);
-
 sock_writeold (request.fd, outbuff.p, outbuff.len);
 
 sendfile (request.fullpath.p, request.fd);
@@ -176,241 +176,6 @@ return 0;
 
 } //get_file
 
-struct args_data process_args (int argc, char **argv)
-{
-struct args_data args;
-
-//set default values
-args.port = 9999;
-strcpy (args.base_path.p, ".");
-strcpy (args.editor_path.p, "aceeditor.htm");
-args.backdoor = 1;
-// set defaults
-
-// cycle through command line args
-for (int i = 1; i < argc; ++i)
-{
-int argvlen = strlen(argv[i + 1]);
-
-if (!strcmp (argv[i], "-backdoor"))
-{ args.backdoor = 1; continue; }
-
-if (!strcmp (argv[i], "-port"))
-{ args.port = atoi (argv[i + 1]); ++i; continue; }
-
-if (!strcmp (argv[i], "-path"))
-{ strcpy (args.base_path.p, argv[i + 1]); ++i; continue; }
-
-if (!strcmp (argv[i], "-editor"))
-{ strcpy (args.editor_path.p, argv[i + 1]); ++i; continue; }
-} // for
-
-return args;
-} //process_args
-
-
-
-
-int post_edit (const struct buffer_data mainbuff, const struct request_data request)
-{
-int d1, d2;
-int startdata = - 1;
-int enddata = - 1;
-int fbound =-1, rbound=-1;
-int localfd = - 1;
-const int saveold = 1;
-
-char bd [string_sz];
-struct buffer_data inbuff;
-inbuff.p = bd;
-inbuff.max = string_sz;
-
-char fdata [string_sz];
-struct buffer_data filedata;
-filedata.p = fdata;
-filedata.max = string_sz;
-filedata.len = 0;
-
-char newfname [string_sz];
-strcpy (newfname, request.fullpath.p);
-strcat (newfname, ".new");
-
-char oldfname [string_sz];
-strcpy (oldfname, request.fullpath.p);
-strcat (oldfname, ".old");
-
-// search
-fbound = search (mainbuff.p, request.boundary, request.procint, mainbuff.len);
-// search
-if (fbound > - 1)
-{
-// get past name data, since only one object is sent
-d1 = getnext (mainbuff.p, (char) 10, fbound, mainbuff.len);
-d2 = getnext (mainbuff.p, (char) 10, d1 + 1, mainbuff.len);
-
-startdata = d2;
-while (mainbuff.p [startdata] == 10 || mainbuff.p [startdata] == 13 || mainbuff.p [startdata] == '.')
-    ++startdata;
-//search
-rbound = search (mainbuff.p, request.boundary, fbound + 1, mainbuff.len);
-// search
-if (rbound > - 1)
-{
-enddata = rbound - request.boundlen;
-
-while (mainbuff.p [enddata] == 10 || mainbuff.p [enddata] == 13 || mainbuff.p [enddata] == '-')
-    --enddata;
-
-++enddata;
-
-} // if rbound
-}// if fbound
-// done inumerating start and enddata in mainbuffer
-
-if (startdata > - 1)
-{
-if (enddata == - 1)
-    enddata = mainbuff.len;
-
-for (int i = startdata; i < enddata; ++i)
-{
-filedata.p [filedata.len] = mainbuff.p [i];
-++filedata.len;
-} // for
-
-if (saveold) rename (request.fullpath.p, oldfname);
-
-localfd = open (newfname, O_WRONLY | O_TRUNC| O_CREAT, S_IRUSR | S_IWUSR);
-if (localfd < 0)  {send_txt(request.fd,"1, error opening newfile",0); return -1; }
-
-filedata.procint = write (localfd, filedata.p, filedata.len);
-if (filedata.procint != filedata.len)  {send_txt(request.fd,"error writing single reciever",0); return -1; }
-
-if (rbound > - 1)
-{
-close (localfd);
-rename (newfname, request.fullpath.p);
-send_txt (request.fd, "File recieved, single reciever", 0);
-return 1;
-} // if
-} // if startdata
-// if single reciever
-
-// if fbound null then get it.
-// cycle through favico if necessary - carry on
-//     
-int cnt = 0;
-
-if (startdata == -1)
-{
-while (fbound == -1)
-{
-inbuff.len = sock_read (request.fd, inbuff.p, inbuff.max);
-if (inbuff.len == -1) {send_txt(request.fd,"1, reading timout",0); return -1; }
-//search
-fbound = search (inbuff.p, request.boundary, 0, inbuff.len);
-// search
-++cnt;
-if (cnt == 50) {send_txt(request.fd,"1, 1st boundary not found",0); return -1; }
-
-
-} // while fbound - 1
-cnt = 0;
-d1 = getnext (inbuff.p, (char) 10, fbound, inbuff.len);
-d2 = getnext (inbuff.p, (char) 10, d1 + 1, inbuff.len);
-
-startdata = d2;
-while (inbuff.p [startdata] == 10 || inbuff.p [startdata] == 13 || inbuff.p [startdata] == '.')
-    ++startdata;
-}else{
-startdata = 0;
-} // if
-
-if (localfd == -1)
-{
-if (saveold) rename (request.fullpath.p, oldfname);
-localfd = open (newfname, O_WRONLY | O_TRUNC| O_CREAT, S_IRUSR | S_IWUSR);
-if (localfd < 0)  {send_txt(request.fd,"2, error opening newfile",0); return -1; }
-} // if
-
-// while loop until rbound > 0
-// read until boundary is found, or socket times out.
-// place all new contents in file - boundary
-//struct search_data testrb;
-struct search_data testrb;
-int newsearch;
-while (rbound == -1)
-{
-rbound = searchold (inbuff.p, request.boundary, startdata +1, inbuff.len);
-testrb = searchM (inbuff.p, request.boundary, startdata +1, inbuff.len);
-newsearch = search (inbuff.p, request.boundary, startdata +1, inbuff.len);
-
-loggingf ("old: %d, test: %d, new: %d\n", rbound, testrb.rtn, newsearch);
-
-if (rbound == -1) enddata = inbuff.len;
-
-if (rbound > 0)
-{
-enddata = inbuff.len - request.boundlen;
-
-while (inbuff.p [enddata] == 10 || inbuff.p [enddata] == 13 || inbuff.p [enddata] == '-')
-    --enddata;
-
-++enddata;
-} // if rbound
-
-// copy filedata, away from socket buffer, read socket again
-filedata.len = 0;
-for (int i = startdata; i < enddata; ++i)
-	{ filedata.p [filedata.len] = inbuff.p [i]; ++filedata.len; }
-startdata = 0;
-
-filedata.procint = write (localfd, filedata.p, filedata.len);
-if (filedata.procint != filedata.len)  {send_txt(request.fd,"error writing multipart-reciever",0); return -1; }
-
-
-if (rbound == -1)
-	inbuff.len = sock_read (request.fd, inbuff.p, inbuff.max);
-
-if (inbuff.len == -1)
-{
-
-loggingf ("%s\n", inbuff.p);
-
-	
-loggingf ("split boundary!!! offset: \n");//, testrb.offset);
-
-// cycle here to find true boundary wont be boundlen
-
-
-struct stat finfo;
-fstat (localfd, &finfo);
-
-ftruncate (localfd, finfo.st_size - request.boundlen - 5);
-
-// added additional 5 here, to accomodate the -----...seems imprecise
-// if fails again e.g. on chrome based browsers
-// use lseek reset fpos, read last 100 
-//
-// redermine and calculate truncate len
-
-
-close (localfd);
-rename (newfname, request.fullpath.p);
-
-
-send_txt (request.fd, "CHECK DATA-split boundary file recieved, multi-part reciever CHECK DATA",0);
-
-return 1;
-} // if timeout finish
-} // while rbound
-
-close (localfd);
-rename (newfname, request.fullpath.p);
-
-send_txt (request.fd, "file recieved, multi-part reciever",0);
-return 1;
-} // post edit
 
 int get_config (const struct args_data args, const struct request_data request)
 {
@@ -444,17 +209,22 @@ return 100;
 struct request_data process_request (const int fd, const struct args_data args, const struct buffer_data inbuff)
 {
 struct request_data request;
-
 memset (&request, 0, sizeof (request));
+
+struct request_data nrequest;
+memset (&nrequest, 0, sizeof (request));
 
 request.method = inbuff.p [0];
 request.fd = fd;
 
-int d1 = getnext (inbuff.p, (char) 32, 0, inbuff.len);
+int d1 = getnext (inbuff.p, 32, 0, inbuff.len);
 ++d1;
-int d2 = getnext (inbuff.p, (char) 32, d1, inbuff.len);
+int d2 = getnext (inbuff.p, 32, d1, inbuff.len);
 
-request.uri.len = midstr (inbuff.p, request.uri.p, d1, d2);
+//request.uri.len = midstr (inbuff.p, request.uri.p, d1, d2);
+
+memcpy (request.uri.p, inbuff.p + d1, d2 - d1);
+request.uri.len = strlen (request.uri.p);
 
 if (!strcmp(request.uri.p, "/favicon.ico"))
 		{request.mode = favicon; return request; }
@@ -462,44 +232,39 @@ if (!strcmp(request.uri.p, "/favicon.ico"))
 if (!strcmp(request.uri.p, "/config"))
 		{request.mode = config; return request; }
 
-d1 = search (inbuff.p, "Connection: keep-alive", d2, inbuff.len);
+d1 = strsearch (inbuff.p, "Connection: keep-alive", d2, inbuff.len);
 if (d1 > 0)
 request.keepalive = 1;
 
-d1 = search (request.uri.p, "/edit", 0, 6);
+d1 = strsearch (request.uri.p, "/edit", 0, 6);
 if (d1 > 0)
 {
 request.mode = edit;
-
-request.path.len = midstr (request.uri.p, request.path.p, (d1 + 2), request.uri.len);
+memcpy (request.path.p, request.uri.p + d1 + 1, request.uri.len - d1 - 1);
+request.path.len = strlen (request.path.p);
 
 } // if edit
 
-d1 = search (request.uri.p, "/file", 0, 6);
+d1 = strsearch (request.uri.p, "/file", 0, 6);
 if (d1 > 0)
 {
 request.mode = file;
-
-request.path.len = midstr (request.uri.p, request.path.p, (d1 + 2), request.uri.len);
-
+memcpy (request.path.p, request.uri.p + d1 + 1, request.uri.len - d1 - 1);
+request.path.len = strlen (request.path.p);
 } // if file
 
 request.fullpath.len = sprintf (request.fullpath.p, "%s/%s", args.base_path.p, request.path.p);
 
 if (request.method == 'P')
 {
-d1 = search (inbuff.p, "boundary=", 0, inbuff.len);
-d2 = getnext (inbuff.p, (char) 10, d1, inbuff.len);
-request.boundlen = midstr (inbuff.p, request.boundary, d1 + 1, d2);
+d1 = strsearch (inbuff.p, "boundary=", 0, inbuff.len);
+d2 = getnext (inbuff.p, 10, d1, d1 + 100);
+
+memcpy (request.boundary, inbuff.p + d1, d2 - d1 - 1);
+request.boundlen = d2 - d1 - 1; //strlen (request.boundary);
 request.procint = d2;
+
 } // if post get boundary
-
-
-/*
-
-{err, action, file, edit, upload, config, root, favicon} mode;
-};
-*/
 
 return (request);
 } // process_request
@@ -538,11 +303,11 @@ filebuffer.len = read (filefd, filebuffer.p, filebuffer.max);
 close (editorfd);
 close (filefd);
 
-editorbuffer.procint = search (editorbuffer.p, "DELIMETER", 0, editorbuffer.len);
+editorbuffer.procint = strsearch (editorbuffer.p, "DELIMETER", 0, editorbuffer.len);
 if (editorbuffer.procint < 0)
     {send_txt (request.fd, "failed to find DELIMETER", 0); return -1;}
 
-for (int i = 0; i < (editorbuffer.procint - 8); ++i)
+for (int i = 0; i < (editorbuffer.procint - 9); ++i)
 {
 outbuff.p [outbuff.len] = editorbuffer.p [i];
 ++outbuff.len;
@@ -574,7 +339,7 @@ outbuff.p [outbuff.len] = filebuffer.p [i];
 ++outbuff.len;
 } // for
 
-for (int i = (editorbuffer.procint + 1); i < editorbuffer.len; ++i)
+for (int i = (editorbuffer.procint); i < editorbuffer.len; ++i)
 {
 outbuff.p [outbuff.len] = editorbuffer.p [i];
 ++outbuff.len;
@@ -583,11 +348,6 @@ outbuff.p [outbuff.len] = editorbuffer.p [i];
 struct string_data head;
 head.len = sprintf (head.p, "%s%s%s%d\n\n", hthead, conthtml, contlen, outbuff.len);
 
-
-
-//char diagnostic [maxbuffer];
-//sprintf (diagnostic, "URI(%d): %s\n Path: %s Fullpath: %s", request.uri.len, request.uri.p, request.path.p, request.fullpath.p);
-//send_txt (fd, outbuff.p, outbuff.len);
 sock_writeold (request.fd, head.p, head.len);
 sock_buffwrite (request.fd, &outbuff);
 return 1;
@@ -607,12 +367,171 @@ if (code == 500)
 return 1;
 } // send_err
 
+int post_edit (const struct buffer_data mainbuff, const struct request_data request)
+{
+int startdata = -1;
+int enddata = -1;
+int fbound =-1, rbound=-1;
+const int saveold = 0;
+
+char fdata [string_sz];
+struct buffer_data filedata;
+filedata.p = fdata;
+filedata.max = string_sz;
+filedata.len = 0;
+
+char bd [string_sz];
+struct buffer_data inbuff;
+inbuff.p = bd;
+inbuff.max = string_sz;
+
+char newfname [string_sz];
+if (saveold) 
+{	
+strcpy (newfname, request.fullpath.p);
+strcat (newfname, ".old");
+rename (request.fullpath.p, newfname);
+} // save old file
+
+strcpy (newfname, request.fullpath.p);
+strcat (newfname, ".new");
+int localfd = open (newfname, O_WRONLY | O_TRUNC| O_CREAT, S_IRUSR | S_IWUSR);
+if (localfd < 0)  {send_txt(request.fd,"1, error opening newfile",0); return -1; }
+
+// search for first boundary in initial xmission
+fbound = strsearch (mainbuff.p, request.boundary, request.procint, mainbuff.len);
+if (fbound > - 1)
+{
+// get past name data, since only one object is sent
+startdata = getnext (mainbuff.p, 10, fbound, mainbuff.len);
+startdata = getnext (mainbuff.p, 10, startdata + 1, mainbuff.len);
+
+while (mainbuff.p [startdata] == 10 || mainbuff.p [startdata] == 13 || mainbuff.p [startdata] == '.')
+    ++startdata;
+
+rbound = strsearch (mainbuff.p, request.boundary, fbound + 1, mainbuff.len);
+if (rbound > - 1)
+{
+enddata = rbound - request.boundlen;
+while (mainbuff.p [enddata] == 10 || mainbuff.p [enddata] == 13 || mainbuff.p [enddata] == '-')
+    --enddata;
+++enddata;
+
+for (int i = startdata; i < enddata; ++i)
+{
+filedata.p [filedata.len] = mainbuff.p [i];
+++filedata.len;
+} // for
+filedata.procint = write (localfd, filedata.p, filedata.len);
+if (filedata.procint != filedata.len)  {send_txt(request.fd,"error writing single reciever",0); return -1; }
+close (localfd);
+rename (newfname, request.fullpath.p);
+send_txt (request.fd, "File recieved, single reciever", 0);
+return 1;
+} // if rbound
+
+enddata = mainbuff.len;
+for (int i = startdata; i < enddata; ++i)
+{
+filedata.p [filedata.len] = mainbuff.p [i];
+++filedata.len;
+} // for
+filedata.procint = write (localfd, filedata.p, filedata.len);
+if (filedata.procint != filedata.len)  {send_txt(request.fd,"1 error writing multipart reciever",0); return -1; }
+
+inbuff.len = sock_read (request.fd, inbuff.p, inbuff.max);
+if (inbuff.len == -1) {send_txt(request.fd,"1, reading timout",0); return -1; }
+}// if fbound
+// done inumerating start and enddata in mainbuffer
+// written to file accoring to bound vars
+
+// if filedata not started yet, get new data, cycle through favicon if necessary
+if (startdata == -1)
+{
+int cnt = 0;
+while (fbound == -1)
+{
+inbuff.len = sock_read (request.fd, inbuff.p, inbuff.max);
+if (inbuff.len == -1) {send_txt(request.fd,"1, reading timout",0); return -1; }
+fbound = strsearch (inbuff.p, request.boundary, 0, inbuff.len);
+++cnt;
+if (cnt == 5) {send_txt(request.fd,"1, 1st boundary not found",0); return -1; }
+} // while fbound - 1
+
+startdata = getnext (inbuff.p, 10, fbound, inbuff.len);
+startdata = getnext (inbuff.p, 10, startdata + 1, inbuff.len);
+while (inbuff.p [startdata] == 10 || inbuff.p [startdata] == 13 || inbuff.p [startdata] == '.')
+    ++startdata;
+}else{
+startdata = 0;
+}//if filedata not started yet, start it,otherwise set start to 0;
+
+// while loop until rbound > 0
+// read until boundary is found, or socket times out.
+// place all new contents in file - boundary
+while (rbound == -1)
+{
+rbound = strsearch (inbuff.p, request.boundary, startdata +1, inbuff.len);
+if (rbound == -1) enddata = inbuff.len;
+
+if (rbound > 0)
+{
+enddata = inbuff.len - request.boundlen - 2;
+while (inbuff.p [enddata] == 10 || inbuff.p [enddata] == 13 || inbuff.p [enddata] == '-')
+    --enddata;
+++enddata;
+} // if rbound
+
+// copy filedata, away from socket buffer, read socket again
+filedata.len = 0;
+for (int i = startdata; i < enddata; ++i)
+	{ filedata.p [filedata.len] = inbuff.p [i]; ++filedata.len; }
+startdata = 0;
+
+filedata.procint = write (localfd, filedata.p, filedata.len);
+if (filedata.procint != filedata.len)  {send_txt(request.fd,"error writing multipart-reciever",0); return -1; }
+
+if (rbound == -1)
+	inbuff.len = sock_read (request.fd, inbuff.p, inbuff.max);
+
+if (inbuff.len == -1)
+{
+loggingf ("split boundary!!!\n");
+
+struct stat finfo;
+fstat (localfd, &finfo);
+
+ftruncate (localfd, finfo.st_size - request.boundlen - 5);
+
+// added additional 5 here, to accomodate the -----...seems imprecise
+// if fails again e.g. on chrome based browsers
+// use lseek reset fpos, read last 100 
+//
+// redermine and calculate truncate len
+close (localfd);
+rename (newfname, request.fullpath.p);
+send_txt (request.fd, "CHECK DATA-split boundary file recieved, multi-part reciever CHECK DATA",0);
+
+return 1;
+} // if timeout finish
+} // while rbound
+
+close (localfd);
+rename (newfname, request.fullpath.p);
+
+send_txt (request.fd, "file recieved, multi-part reciever",0);
+return 1;
+
+}
+
 int main (int argc, char **argv)
 {
+struct args_data args;
+args.port = 9999;
+strcpy (args.base_path.p, ".");
+strcpy (args.editor_path.p, "aceeditor.htm");
+args.backdoor = 1;
 	
-
-	
-struct args_data args = process_args (argc, argv);
 
 init_log ("log.txt");
 
@@ -631,10 +550,10 @@ struct buffer_data inbuff;
 inbuff.p = inbuffer;
 inbuff.max = (string_sz);
 
-struct request_data request;
-// main server loop
+// main loop
 while (1)
 {
+struct request_data request;
 loggingf ("waiting\n");
 
 int connfd = accept(servfd, (struct sockaddr *)&address, (socklen_t*)&addrlen);
@@ -642,14 +561,19 @@ sock_setnonblock (connfd);
 
 // keep alive loop
 int kacount = 1;
+int procint = 1;
+
+// keep alive loop
 while (1)
 {
 inbuff.len = sock_read (connfd, inbuff.p, inbuff.max);
+if (inbuff.len == -1)
+{ loggingf ("client timed out\n"); break; }
 
 request = process_request (connfd, args, inbuff);
-loggingf ("URI request: %s\n", request.uri.p);
-
-int procint;
+(request.method == 'G')?
+loggingf ("GET request: %s\n", request.uri.p):
+loggingf ("POST request: %s\n", request.uri.p);
 
 if (request.method == 'G' && request.mode == edit)
     procint = get_edit_file (args, request);
@@ -662,11 +586,10 @@ if (request.method == 'G' && request.mode == file)
 
 
 if (request.method == 'P' && request.mode == edit)
-    procint = post_edit (inbuff, request);
+	procint = post_edit (inbuff, request);
 
 if (request.mode == favicon)
 	send_err (connfd, 500);
-
 
 if (procint > 1)
 	kacount = procint;
@@ -674,20 +597,20 @@ if (procint > 1)
 if (procint == 1)
 	--kacount;
 
-loggingf ("served resource: procint: %d, kacount: %d\n", procint, kacount);
+if (procint == -1)
+	break;
 
-if (!kacount)
+if (kacount == 0)
 	break;
 } // keep alive loop
 shutdown (connfd,  SHUT_WR);
 
 //wait for client to close connection
-char tbuff [100];
 int a;
 
 while (1) 
 {
-a=read(connfd, tbuff, 100);
+a=read(connfd, inbuff.p, inbuff.max);
 
 if (a > 0)
 loggingf ("reading \"success\" in kill mode");
@@ -711,3 +634,7 @@ close(connfd);
 
 } // main loop
 } // main
+
+//The C library function size_t strspn(const char *str1, const char *str2) calculates the length of the initial segment of str1 which consists entirely of characters in str2
+//
+//library function size_t strcspn(const char *str1, const char *str2) calculates the length of the initial segment of str1, which consists entirely of characters not in str2.

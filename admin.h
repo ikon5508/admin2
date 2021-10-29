@@ -41,4 +41,3 @@ int boundlen;
 enum emode
 {err, action, file, edit, upload, config, root, favicon} mode;
 };
-

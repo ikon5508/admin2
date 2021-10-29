@@ -61,23 +61,6 @@ progress += wlen;
 return 1; 
 } // sock_buffwrite
 
-int getlast (const char *str, const char next, const int end)
-{
-const int debug = 0;
-
-    for (int i = end; i >= 0; --i)
-    {
-    
-        if (debug)
-            printf ("c: %c - %c\n", str[i], next);
-        
-        if (str[i] == next)
-            return i;
-    }
-
-    return  -1;
-}
-
 int init_buffer (struct buffer_data *buffer, const int size)
 {
 buffer->p = (char *) malloc (size);
@@ -89,6 +72,7 @@ if (buffer->p == NULL)
     return size;
 } // init_buffer
 
+/*
 int getnext (const char *str, const char next, const int start, int end)
 {
 const int debug = 0;
@@ -108,6 +92,7 @@ if (str[i] == next)
 
     return  -1;
 } // getnext
+*/
 
 int midstr(const char *major, char *minor, int start, const int end)
 {
@@ -121,86 +106,6 @@ minor[count] = major[start];
 minor[count] = 0;
 return (count);
 } // end midstr
-
-int searchold (const char *main, const char *minor, int start, int end)
-{
-int smallcount = 0;
-
-if (end == 0)
-    end = strlen (main);
-
-while (start < end)
-
-{
-if (main[start] == minor[smallcount])
-{
-//printf("main: %c, minor: %c\n", main[lc], minor[sc]);
- 
-++smallcount;
-
-} // end if
-
-    
-if (minor[smallcount] == 0)
-return start;
-
-
-if (!(main[start] == minor[smallcount]))
-    smallcount = 0;
-    
-++start;    
-
-} // end while
-return -1;
-} // end searchold
-
-
-/*
-searchMP is search multi-part
-starts searching the minor string at offset
- */
-struct search_data searchM  (const char *main, const char *minor, const int start, int end)
-{
-struct search_data rtn = {0, 0};
-
-
-if (end == 0)
-    end = strlen (main);
-
-int minorlen = strlen (minor);
-
-//while (start < end)
-int i, x;
-for (i = start; i < end; ++i)
-{
-if (main[i] == minor[0])
-{
-for (x = 1; x < minorlen; ++x)
-{
-	
-if (main [i + x] != minor [x])
- break; // if minor mismatch
-
-} // for x
-if (x == minorlen)
-{
-rtn.rtn = (i + x - 1);
-return rtn;
-}
-
-} // end if minor [0] hit
-
-} // end for i
-
-//loggingf ("i: %d, x: %d\n", i, x);
-
-rtn.rtn = -1;
-rtn.offset = x;
-return rtn;
-
-
-}//searchM
-
 
 int buffcatf (struct buffer_data *buff, const char *format, ...)
 {
@@ -285,15 +190,10 @@ return 1;
 } // buffcatf
 
 
-int search (const char *main, const char *minor, const int start, int end)
+int search (const char *main, const char *minor, const int start, const int end)
 {
+int minorlen = strlen (minor) -1;
 
-if (end == 0)
-    end = strlen (main);
-
-int minorlen = strlen (minor);
-
-//while (start < end)
 int i, x;
 for (i = start; i < end; ++i)
 {
@@ -313,10 +213,9 @@ return (i + x - 1);
 
 } // end for i
 
-//loggingf ("i: %d, x: %d\n", i, x);
-
 return -1;
 } // end search
+
 
 int init_sockbackdoor (const char *init)
 {
@@ -475,7 +374,7 @@ if (deadtime >= timeout)
 
 
 return len;
-} // sock_write
+} // sock_write_old
 
 
 int sock_read (const int connfd, char *buffer, const int size)
@@ -676,3 +575,75 @@ fd = open (path, O_WRONLY | O_TRUNC | O_CREAT, S_IRUSR | S_IWUSR);
 return (fd);
 
 }
+
+int strsearch (const char *hay, const char *needle, const int offset, const int haylen) 
+{
+// int haylen = strlen(hay);
+     	char haystack[haylen - offset];
+    memcpy(haystack, hay+offset, haylen - offset);
+
+//loggingf ("GOD DAMNED HAYSTACK: %s\nDONE WITH GOD DAMNED HAYSTACK\n", haystack);
+
+
+    char *p = strstr(haystack, needle);
+    if (p) 
+return p - haystack + offset + strlen(needle);
+    return -1; 
+} // strsearch	
+
+int buffsearch (const struct buffer_data hay, const char *needle, const int offset, const int roffset) 
+{
+    char haystack[hay.len - offset - roffset];
+    memcpy(haystack, hay.p+offset, hay.len - offset - roffset);
+// pritf ("%s\n", haystack);
+
+    char *p = strstr(haystack, needle);
+    if (p) 
+return p - haystack + offset + strlen(needle);
+    return -1; 
+} // buffwrite
+
+int getnext (const char *base, int c, const int offset, const int len)
+{
+
+    char haystack[len - offset];
+    memcpy(haystack, base+offset, len - offset);
+char *r = strchr (haystack, c);
+
+if (r == NULL)
+	return -1;
+
+return r - haystack + offset;
+
+}
+
+int getlast (const char *str, const int c)
+{
+
+	
+    char haystack[strlen (str)];
+    memcpy(haystack, str, strlen(str));
+char *r = strchr (haystack, c);
+
+if (r == NULL)
+	return -1;
+
+return r - haystack;
+
+	
+}
+/*
+int main ()
+{
+char *b = "this is the base string";
+int lenb = strlen (b);
+printf ("%s\n", b);
+
+int a = strsearch (b, "string ", 0, lenb);
+
+printf ("a is: %d\n", a);
+
+
+
+}
+*/

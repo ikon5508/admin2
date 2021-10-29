@@ -18,7 +18,7 @@
 
 #define maxbuffer 100000
 
-#define string_sz 1000
+#define string_sz 1500
 
 struct buffer_data
 {
@@ -42,12 +42,10 @@ int offset;
 };
 
 int init_buffer (struct buffer_data *buffer, const int size);
-int getnext (const char *str, const char next, const int start, const int end);
+int getnext (const char *base, const int c, const int offset, const int len);
 int midstr(const char *major, char *minor, int start, const int end);
-int getlast (const char *str, const char next, const int end);
-int searchold (const char *main, const char *minor, int start, int end);
-int search (const char *main, const char *minor, const int start, int end);
-struct search_data searchM  (const char *main, const char *minor,const int start, int end);
+int getlast (const char *str, const int c);
+int search (const char *main, const char *minor, const int start, const int end);
 int sock_buffwrite (const int connfd, struct buffer_data *out);
 int buffcatf (struct buffer_data *buff, const char *format, ...);
 int prepsocket (const int PORT);
@@ -60,4 +58,10 @@ int init_sockbackdoor (const char *init);
 int init_log (const char *path);
 int loggingf (const char *format, ...);
 void close_log ();
+
+
+int strsearch (const char *hay, const char *needle, const int offset, const int haylen); 
+
+int buffsearch (const struct buffer_data hay, const char *needle, const int offset, const int roffset);
+
 extern const int timeout;
