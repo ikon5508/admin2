@@ -13,7 +13,6 @@
 #include <sys/stat.h>
 #include <errno.h>
 #include <string.h>
-#include <unistd.h>
 #include <time.h>
 
 #define maxbuffer 100000
@@ -41,13 +40,14 @@ int rtn;
 int offset;
 };
 
+
 int init_buffer (struct buffer_data *buffer, const int size);
 int getnext (const char *base, const int c, const int offset, const int len);
 int midstr(const char *major, char *minor, int start, const int end);
-int getlast (const char *str, const int c);
+int getlast (const char *str, const int c, const int len);
 int search (const char *main, const char *minor, const int start, const int end);
 int sock_buffwrite (const int connfd, struct buffer_data *out);
-int buffcatf (struct buffer_data *buff, const char *format, ...);
+void buffcatf (struct buffer_data *buff, const char *format, ...);
 int prepsocket (const int PORT);
 int sock_setnonblock (const int fd);
 int sock_writeold (const int connfd, const char *buffer, const int size);
@@ -59,6 +59,7 @@ int init_log (const char *path);
 int loggingf (const char *format, ...);
 void close_log ();
 
+int countassets (const struct buffer_data buff);
 
 int strsearch (const char *hay, const char *needle, const int offset, const int haylen); 
 

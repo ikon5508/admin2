@@ -443,7 +443,7 @@ startdata = 0;
 // while loop until rbound > 0
 // read until boundary is found, or socket times out.
 // place all new contents in file - boundary
-while (rbound /*== -1*/)
+while (rbound == -1)
 {
 rbound = strsearch (inbuff.p, request.boundary, startdata +1, inbuff.len);
 if (rbound == -1) enddata = inbuff.len;
@@ -475,16 +475,13 @@ loggingf ("split boundary!!!\n");
 struct stat finfo;
 fstat (localfd, &finfo);
 
-//ftruncate (localfd, finfo.st_size - request.boundlen - 5);
+ftruncate (localfd, finfo.st_size - request.boundlen - 5);
 
 // added additional 5 here, to accomodate the -----...seems imprecise
 // if fails again e.g. on chrome based browsers
 // use lseek reset fpos, read last 100 
 //
 // redermine and calculate truncate len
-
-//truncnew (localfd, request.boundlen);
-
 close (localfd);
 rename (newfname, request.fullpath.p);
 send_txt (request.fd, "CHECK DATA-split boundary file recieved, multi-part reciever CHECK DATA",0);
@@ -730,7 +727,7 @@ close(fd);
 int main (int argc, char **argv)
 {
 struct args_data args;
-args.port = 8888;
+args.port = 9999;
 strcpy (args.base_path.p, ".");
 strcpy (args.editor_path.p, "aceeditor.htm");
 args.backdoor = 1;

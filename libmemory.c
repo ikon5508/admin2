@@ -1,5 +1,4 @@
 #include "libmemory.h"
-
 const int timeout = 3;
 
 
@@ -72,28 +71,6 @@ if (buffer->p == NULL)
     return size;
 } // init_buffer
 
-/*
-int getnext (const char *str, const char next, const int start, int end)
-{
-const int debug = 0;
-
-if (end == 0)
-end = strlen (str);
-
-for (int i = start; i < end; ++i)
-{
-    
-if (debug)
-printf ("c: %c - %c\n", str[i], next);
-        
-if (str[i] == next)
-	return i;
-} // for
-
-    return  -1;
-} // getnext
-*/
-
 int midstr(const char *major, char *minor, int start, const int end)
 {
 int count = 0;
@@ -107,7 +84,7 @@ minor[count] = 0;
 return (count);
 } // end midstr
 
-int buffcatf (struct buffer_data *buff, const char *format, ...)
+void buffcatf (struct buffer_data *buff, const char *format, ...)
 {
 va_list ap;
 va_start (ap, format);
@@ -186,7 +163,7 @@ buff->p [buff->len] = entry [i];
 
 
 
-return 1;
+//return 1;
 } // buffcatf
 
 
@@ -617,13 +594,13 @@ return r - haystack + offset;
 
 }
 
-int getlast (const char *str, const int c)
+int getlast (const char *str, const int c, const int len)
 {
 
 	
-    char haystack[strlen (str)];
-    memcpy(haystack, str, strlen(str));
-char *r = strchr (haystack, c);
+    char haystack[len];
+    memcpy(haystack, str, len);
+char *r = strrchr (haystack, c);
 
 if (r == NULL)
 	return -1;
@@ -632,6 +609,28 @@ return r - haystack;
 
 	
 }
+
+int countassets (const struct buffer_data buff)
+{
+int rtn = 0;
+
+int pos = 0;
+
+
+while (pos != -1)
+{
+pos = strsearch (buff.p, " src=", pos + 1, buff.len);
+
+if (pos > -1)
+	++rtn;
+
+}
+return rtn;
+}
+
+
+
+
 /*
 int main ()
 {
