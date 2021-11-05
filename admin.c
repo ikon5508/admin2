@@ -1,5 +1,33 @@
 #include "admin.h"
 
+void softclose (const int fd, struct buffer_data *inbuff)
+{
+shutdown (fd,  SHUT_WR);
+
+//wait for client to close connection
+int a = -1;
+
+while (a) 
+{
+a=read(fd, inbuff->p, inbuff->max);
+
+//if (a > 0)
+//loggingf ("reading \"success\" in kill mode\n");
+
+if(a < 0)
+{
+usleep (1000);
+//logging ("closing, remote, not ready",1,0);
+}
+if(!a) 
+{
+loggingf ("Connection closed by client\n");
+} // if socket non blocked
+} // for wait for close bit.
+
+close(fd);
+} // softclose
+
 int send_err (const int fd, const int code)
 {
 
@@ -443,7 +471,7 @@ startdata = 0;
 // while loop until rbound > 0
 // read until boundary is found, or socket times out.
 // place all new contents in file - boundary
-while (rbound /*== -1*/)
+while (rbound == -1)
 {
 rbound = strsearch (inbuff.p, request.boundary, startdata +1, inbuff.len);
 if (rbound == -1) enddata = inbuff.len;
@@ -475,16 +503,13 @@ loggingf ("split boundary!!!\n");
 struct stat finfo;
 fstat (localfd, &finfo);
 
-//ftruncate (localfd, finfo.st_size - request.boundlen - 5);
+ftruncate (localfd, finfo.st_size - request.boundlen - 5);
 
 // added additional 5 here, to accomodate the -----...seems imprecise
 // if fails again e.g. on chrome based browsers
 // use lseek reset fpos, read last 100 
 //
 // redermine and calculate truncate len
-
-//truncnew (localfd, request.boundlen);
-
 close (localfd);
 rename (newfname, request.fullpath.p);
 send_txt (request.fd, "CHECK DATA-split boundary file recieved, multi-part reciever CHECK DATA",0);
@@ -543,13 +568,15 @@ sock_writeold (fd, outbuff.p, outbuff.len);
 
 sendfile ("favicon.ico", fd);
 return 1;
-}
+} // servico
 
 int post_file (const struct buffer_data mainbuff, const struct request_data request)
 {
 int startdata = -1;
 int enddata = -1;
 int fbound =-1, rbound=-1;
+const int saveold = 0;
+long progress = 0;
 
 char fdata [string_sz];
 struct buffer_data filedata;
@@ -561,24 +588,32 @@ char bd [string_sz];
 struct buffer_data inbuff;
 inbuff.p = bd;
 inbuff.max = string_sz;
+
 char fname [100];
 char fullpath [string_sz];
-int localfd =  -1;
+memset (fname, 0, 100);
+
+
+int localfd;
+
 // search for first boundary in initial xmission
 fbound = strsearch (mainbuff.p, request.boundary, request.procint, mainbuff.len);
 if (fbound > - 1)
 {
+startdata = getnext (mainbuff.p, 10, fbound, mainbuff.len);
+startdata = getnext (mainbuff.p, 10, startdata + 1, mainbuff.len);
+startdata = getnext (mainbuff.p, 10, startdata + 1, mainbuff.len);
+startdata = getnext (mainbuff.p, 10, startdata + 1, mainbuff.len);
+
+while (mainbuff.p [startdata] == 10 || mainbuff.p [startdata] == 13 || mainbuff.p [startdata] == '.')
+    ++startdata;
+
 int d1 = strsearch (mainbuff.p, "filename=\"", fbound, mainbuff.len);
-int d2 = getnext (mainbuff.p,(int) '\"', d1 + 1, mainbuff.len);
-strncpy (fname, mainbuff.p + d1, d2 - d1);
+int d2 = getnext (mainbuff.p, (int) '\"', d1, mainbuff.len);
+memcpy (fname, mainbuff.p + d1, d2 - d1);
 sprintf (fullpath, "%s/%s", request.fullpath.p, fname);
 localfd = open (fullpath, O_WRONLY | O_TRUNC| O_CREAT, S_IRUSR | S_IWUSR);
 if (localfd < 0)  {send_txt(request.fd,"1, error opening newfile",0); return -1; }
-
-d2 = getnext (mainbuff.p, 10, d2 + 1, mainbuff.len);
-startdata = getnext (mainbuff.p, 10, d2, mainbuff.len);
-while (mainbuff.p [startdata] == 10 || mainbuff.p [startdata] == 13 || mainbuff.p [startdata] == '.')
-    ++startdata;
 
 rbound = strsearch (mainbuff.p, request.boundary, fbound + 1, mainbuff.len);
 if (rbound > - 1)
@@ -588,11 +623,15 @@ while (mainbuff.p [enddata] == 10 || mainbuff.p [enddata] == 13 || mainbuff.p [e
     --enddata;
 ++enddata;
 
-for (int i = startdata; i < enddata; ++i)
-{
-filedata.p [filedata.len] = mainbuff.p [i];
-++filedata.len;
-} // for
+//for (int i = startdata; i < enddata; ++i)
+//{
+//filedata.p [filedata.len] = mainbuff.p [i];
+//++filedata.len;
+//} // for
+
+memcpy (filedata.p, mainbuff.p + startdata, enddata - startdata);
+filedata.len = enddata - startdata;
+
 filedata.procint = write (localfd, filedata.p, filedata.len);
 if (filedata.procint != filedata.len)  {send_txt(request.fd,"error writing single reciever",0); return -1; }
 close (localfd);
@@ -601,14 +640,20 @@ return 1;
 } // if rbound
 
 enddata = mainbuff.len;
-for (int i = startdata; i < enddata; ++i)
-{
-filedata.p [filedata.len] = mainbuff.p [i];
-++filedata.len;
-} // for
+//for (int i = startdata; i < enddata; ++i)
+//{
+//filedata.p [filedata.len] = mainbuff.p [i];
+//++filedata.len;
+//} // for
+
+
+memcpy (filedata.p, mainbuff.p + startdata, enddata - startdata);
+filedata.len = enddata - startdata;
 filedata.procint = write (localfd, filedata.p, filedata.len);
 if (filedata.procint != filedata.len)  {send_txt(request.fd,"1 error writing multipart reciever",0); return -1; }
 
+inbuff.len = sock_read (request.fd, inbuff.p, inbuff.max);
+if (inbuff.len == -1) {send_txt(request.fd,"1, reading timout",0); return -1; }
 }// if fbound
 // done inumerating start and enddata in mainbuffer
 // written to file accoring to bound vars
@@ -626,18 +671,21 @@ fbound = strsearch (inbuff.p, request.boundary, 0, inbuff.len);
 if (cnt == 5) {send_txt(request.fd,"1, 1st boundary not found",0); return -1; }
 } // while fbound - 1
 
+startdata = getnext (inbuff.p, 10, fbound, inbuff.len);
+startdata = getnext (inbuff.p, 10, startdata + 1, inbuff.len);
+startdata = getnext (inbuff.p, 10, startdata + 1, inbuff.len);
+startdata = getnext (inbuff.p, 10, startdata + 1, inbuff.len);
 
-int d1 = strsearch (inbuff.p, "filename=\"", 0, inbuff.len);
-int d2 = getnext (inbuff.p,(int) '\"', d1 + 1, inbuff.len);
-strncpy (fname, inbuff.p + d1, d2 - d1);
+while (inbuff.p [startdata] == 10 || inbuff.p [startdata] == 13 || inbuff.p [startdata] == '.')
+    ++startdata;
+
+int d1 = strsearch (inbuff.p, "filename=\"", fbound, inbuff.len);
+int d2 = getnext (inbuff.p, (int) '\"', d1, inbuff.len);
+memcpy (fname, inbuff.p + d1, d2 - d1);
 sprintf (fullpath, "%s/%s", request.fullpath.p, fname);
 localfd = open (fullpath, O_WRONLY | O_TRUNC| O_CREAT, S_IRUSR | S_IWUSR);
 if (localfd < 0)  {send_txt(request.fd,"1, error opening newfile",0); return -1; }
-
-d2 = getnext (inbuff.p,(int) 10, d2 + 1, inbuff.len);
-startdata = getnext (inbuff.p, 10, d2 + 1, inbuff.len);
-while (inbuff.p [startdata] == 10 || inbuff.p [startdata] == 13 || inbuff.p [startdata] == '.')
-    ++startdata;
+    
 }else{
 startdata = 0;
 }//if filedata not started yet, start it,otherwise set start to 0;
@@ -648,7 +696,6 @@ startdata = 0;
 while (rbound == -1)
 {
 rbound = strsearch (inbuff.p, request.boundary, startdata +1, inbuff.len);
-if (rbound == -1) enddata = inbuff.len;
 
 if (rbound > 0)
 {
@@ -656,28 +703,49 @@ enddata = inbuff.len - request.boundlen - 2;
 while (inbuff.p [enddata] == 10 || inbuff.p [enddata] == 13 || inbuff.p [enddata] == '-')
     --enddata;
 ++enddata;
-} // if rbound
 
-// copy filedata, away from socket buffer, read socket again
-filedata.len = 0;
-for (int i = startdata; i < enddata; ++i)
-	{ filedata.p [filedata.len] = inbuff.p [i]; ++filedata.len; }
-startdata = 0;
+memcpy (filedata.p, inbuff.p + startdata, enddata - startdata);
+filedata.len = enddata - startdata;
 
 filedata.procint = write (localfd, filedata.p, filedata.len);
 if (filedata.procint != filedata.len)  {send_txt(request.fd,"error writing multipart-reciever",0); return -1; }
 
-if (rbound == -1)
-	inbuff.len = sock_read (request.fd, inbuff.p, inbuff.max);
+send_txt (request.fd, "file recieved, multipart reciever", 0);
 
+progress += filedata.len;
+loggingf ("%d bytes: file recieved and allocated properly\n", progress);
+return 1;
+
+} // if < rbound
+
+// read here after memcpy / direct write
+
+if (startdata == 0)
+{
+inbuff.procint = write (localfd, inbuff.p, inbuff.len);
+if (inbuff.procint != inbuff.len) {send_txt(request.fd,"error writing multipart-reciever",0); return -1; }
+
+progress += inbuff.len;
+}else{
+memcpy (filedata.p, inbuff.p + startdata, inbuff.len - startdata);
+filedata.len = inbuff.len - startdata;
+progress += filedata.len;
+
+
+filedata.procint = write (localfd, filedata.p, filedata.len);
+if (filedata.procint != filedata.len)  {send_txt(request.fd,"error writing multipart-reciever",0); return -1; }
+}/// if
+
+
+inbuff.len = sock_read (request.fd, inbuff.p, inbuff.max);
 if (inbuff.len == -1)
 {
 loggingf ("split boundary!!!\n");
 
-struct stat finfo;
-fstat (localfd, &finfo);
+//struct stat finfo;
+//fstat (localfd, &finfo);
 
-ftruncate (localfd, finfo.st_size - request.boundlen - 5);
+//ftruncate (localfd, finfo.st_size - request.boundlen - 5);
 
 // added additional 5 here, to accomodate the -----...seems imprecise
 // if fails again e.g. on chrome based browsers
@@ -689,6 +757,10 @@ send_txt (request.fd, "CHECK DATA-split boundary file recieved, multi-part recie
 
 return 1;
 } // if timeout finish
+
+
+
+startdata = 0;
 } // while rbound
 
 close (localfd);
@@ -696,41 +768,12 @@ close (localfd);
 send_txt (request.fd, "file recieved, multi-part reciever",0);
 return 1;
 
-} // post file
-
-void softclose (const int fd, struct buffer_data *inbuff)
-{
-shutdown (fd,  SHUT_WR);
-
-//wait for client to close connection
-int a = -1;
-
-while (a) 
-{
-a=read(fd, inbuff->p, inbuff->max);
-
-//if (a > 0)
-//loggingf ("reading \"success\" in kill mode\n");
-
-if(a < 0)
-{
-usleep (1000);
-//logging ("closing, remote, not ready",1,0);
-}
-if(!a) 
-{
-loggingf ("Connection closed by client\n");
-} // if socket non blocked
-} // for wait for close bit.
-
-close(fd);
-
-} // softclose
+} //post file
 
 int main (int argc, char **argv)
 {
 struct args_data args;
-args.port = 8888;
+args.port = 9999;
 strcpy (args.base_path.p, ".");
 strcpy (args.editor_path.p, "aceeditor.htm");
 args.backdoor = 1;
