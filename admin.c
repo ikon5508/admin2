@@ -397,9 +397,7 @@ strcat (newfname, ".old");
 rename (request.fullpath.p, newfname);
 } // save old file
 
-strcpy (newfname, request.fullpath.p);
-strcat (newfname, ".new");
-int localfd = open (newfname, O_WRONLY | O_TRUNC| O_CREAT, S_IRUSR | S_IWUSR);
+int localfd = open (request.fullpath.p, O_WRONLY | O_TRUNC| O_CREAT, S_IRUSR | S_IWUSR);
 if (localfd < 0)  {send_txt(request.fd,"1, error opening newfile",0); return -1; }
 
 // search for first boundary in initial xmission
@@ -483,7 +481,7 @@ startdata = 0;
 
 while (rbound == -1)
 {
-rbound = strsearch (inbuff.p, request.boundary, startdata +1, inbuff.len);
+rbound = strsearch (inbuff.p, request.boundary, inbuff.len - request.boundlen - 10, inbuff.len);
 
 if (rbound > 0)
 {
