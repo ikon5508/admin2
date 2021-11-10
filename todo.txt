@@ -1,0 +1,27 @@
+load settings from file
+use action page
+load pics on action page option
+
+if browser cancels download, server crashes!
+
+do time stamps
+
+do ssl
+
+do cursor controls on aceeditor
+
+do mp4 completion
+
+do buffer overflow protection get_edit
+
+do overwrite protectiin post file
+
+do rename / delete prompt
+
+do new file prompt
+
+do make prompt
+
+FINISH ACTION PAGE
+
+

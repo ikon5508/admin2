@@ -7,7 +7,8 @@
   <style type="text/css" media="screen">
     body {
         overflow: hidden;
-font-family: Arial, Helvetica, sans-serif;
+background-color: blue;
+	font-family: Arial, Helvetica, sans-serif;
 }
 .button {
     padding-left:20px;
@@ -78,11 +79,11 @@ form.submit();
 
 } // function save
 
-function toggle_HTML ()
+function mode (evt)
 {
 //window.alert ("Hello");
-
-    editor.session.setMode("ace/mode/html");
+let path = "ace/mode/" + evt.target.value;
+   editor.session.setMode(path);
 
 }
 function theme (evt) {
@@ -132,7 +133,12 @@ function fntsz (evt) {
 
 <input type="button" class="button" value="save" onclick="save()">
 <input type="button" class="button" value="test" onclick="test()">
-<input type="button" class="button" value="HTML" onclick="toggle_HTML()">
+
+<select class="button" onchange="mode(event)">
+  <option>c_cpp</option>  
+  <option>html</option>
+    
+</select>
 
 <select class="button" onchange="theme(event)">
 <option>terminal</option>  
@@ -167,12 +173,20 @@ function fntsz (evt) {
 <input type="button" class="button" value="cut" onclick="cut()">
 <input type="button" class="button" value="copy" onclick="copy()">
 <input type="button" class="button" value="paste" onclick="paste()">
+<br>
+
+<input type="button" class="button" value="save" onclick="save()">
+<input type="button" class="button" value="test" onclick="test()">
+
+
 </div>
 <script src="/file/ace-builds/src-noconflict/ace.js" type="text/javascript" charset="utf-8"></script>
 <script>
     var editor = ace.edit("editor");
     editor.setTheme("ace/theme/terminal");
     editor.session.setMode("ace/mode/c_cpp");
+    
+    document.getElementById('editor').style.fontSize=("18px");
 </script>
 
 </body>

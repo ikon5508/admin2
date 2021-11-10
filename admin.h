@@ -11,7 +11,11 @@ const char *contjava = "Content-Type: text/javascript\n";
 const char *conthtml = "Content-Type: text/html; charset=utf-8\n";
 const char *conttxt = "Content-Type: text/plain\n";
 const char *contjpg = "Content-Type: image/jpg\n";
+const char *contpng = "Content-Type: image/png\n";
 const char *contcss = "Content-Type: text/css\n";
+
+const char *contmp4 = "Content-Type: video/mp4\n";
+
 const char *connclose = "Connection: close\n";
 const char *connka = "Connection: timeout=5, max=10\n";
 const char *contlen = "Content-Length: ";
@@ -20,7 +24,7 @@ const char *contlen = "Content-Length: ";
 
 struct args_data {
 int port;
-int backdoor;
+int ssl;
 struct string_data base_path;
 struct string_data editor_path;
 };
@@ -41,3 +45,13 @@ int boundlen;
 enum emode
 {err, action, file, edit, upload, config, root, favicon} mode;
 };
+
+
+void softclose (const int fd, struct buffer_data *inbuff);
+
+int send_err (const int fd, const int code);
+
+int send_txt (const int fd, const char *txt, int len);
+
+int serv_dir (const struct args_data args, const struct request_data request);
+

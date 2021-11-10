@@ -1,4 +1,5 @@
 #include "libmemory.h"
+
 const int timeout = 3;
 
 
@@ -70,6 +71,28 @@ if (buffer->p == NULL)
 
     return size;
 } // init_buffer
+
+/*
+int getnext (const char *str, const char next, const int start, int end)
+{
+const int debug = 0;
+
+if (end == 0)
+end = strlen (str);
+
+for (int i = start; i < end; ++i)
+{
+    
+if (debug)
+printf ("c: %c - %c\n", str[i], next);
+        
+if (str[i] == next)
+	return i;
+} // for
+
+    return  -1;
+} // getnext
+*/
 
 int midstr(const char *major, char *minor, int start, const int end)
 {
@@ -205,7 +228,7 @@ return 1;
 } // init_sockbackdoor
 
 
-int sendfile (const char *path, const int fd)
+int sendfileold (const char *path, const int fd)
 {
 int locfd = open (path, O_RDONLY);
 if (locfd < -1)
@@ -221,10 +244,10 @@ size_t write_progress = 0;
 size_t fsize = finfo.st_size;
 //loggingf (200, "file size: %d\n", fsize);
 
-char c_fbuffer [string_sz];
+char c_fbuffer [500];
 struct buffer_data fbuff;
 fbuff.p = c_fbuffer;
-fbuff.max = string_sz;
+fbuff.max = 500;
 
 
 while (read_progress < fsize)
@@ -251,6 +274,51 @@ close (locfd);
 return 1;
 } // sendfileold
 
+int sendfile (const char *path, const int fd)
+{
+int locfd = open (path, O_RDONLY);
+if (locfd < -1)
+    return -1;
+
+struct stat finfo;
+fstat (locfd, &finfo);
+
+size_t read_progress = 0;
+
+size_t write_progress = 0;
+
+size_t fsize = finfo.st_size;
+//loggingf (200, "file size: %d\n", fsize);
+
+char c_fbuffer [500];
+struct buffer_data fbuff;
+fbuff.p = c_fbuffer;
+fbuff.max = 500;
+
+
+while (read_progress < fsize)
+{  
+fbuff.len = read (locfd, fbuff.p, fbuff.max);
+read_progress += fbuff.len;
+
+int interim_progress = sock_writeold (fd, fbuff.p, fbuff.len);
+
+while (interim_progress < fbuff.len)
+{
+int cpylen = fbuff.len - interim_progress;
+//for (int i = interim_progress; i < fbuff.len; ++i)
+//fbuff.p [i - interim_progress] = fbuff.p [i];
+//fbuff.p += interim_progress; // doesnt work
+memmove (fbuff.p, fbuff.p + interim_progress, cpylen);
+fbuff.len = cpylen;
+
+interim_progress = sock_writeold (fd, fbuff.p, fbuff.len);
+} // while
+
+} // while loop
+close (locfd);
+return 1;
+} // sendfile
 
 
 
@@ -342,11 +410,11 @@ if (deadtime >= timeout)
 
 } // while
 
-//if (backdoorfd)
-//{
-//write (backdoorfd, "\n......write......\n", 19);
-//write (backdoorfd, buffer, len);
-//}
+if (backdoorfd)
+{
+write (backdoorfd, "\n......write......\n", 19);
+write (backdoorfd, buffer, len);
+}
 
 
 
@@ -628,9 +696,6 @@ if (pos > -1)
 return rtn;
 }
 
-
-
-
 /*
 int main ()
 {
@@ -638,7 +703,7 @@ char *b = "this is the base string";
 int lenb = strlen (b);
 printf ("%s\n", b);
 
-int a = strsearch (b, "string ", 0, lenb);
+int a = strsearch (b, "string", 0, lenb);
 
 printf ("a is: %d\n", a);
 

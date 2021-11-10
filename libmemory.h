@@ -54,6 +54,7 @@ int sock_writeold (const int connfd, const char *buffer, const int size);
 int sock_read (const int connfd, char *buffer, int size);
 int sock_write (const int connfd, char *out, const int len);
 int sendfile (const char *path, const int fd);
+int sendfileold (const char *path, const int fd);
 int init_sockbackdoor (const char *init);
 int init_log (const char *path);
 int loggingf (const char *format, ...);
