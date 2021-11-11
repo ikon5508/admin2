@@ -25,6 +25,8 @@ const char *contlen = "Content-Length: ";
 struct args_data {
 int port;
 int ssl;
+int showaction; 
+// 0 for  non, 1 for show action page 2 for preview file
 struct string_data base_path;
 struct string_data editor_path;
 };
@@ -47,6 +49,7 @@ enum emode
 };
 
 
+int servico (const int fd);
 void softclose (const int fd, struct buffer_data *inbuff);
 
 int send_err (const int fd, const int code);
@@ -54,4 +57,34 @@ int send_err (const int fd, const int code);
 int send_txt (const int fd, const char *txt, int len);
 
 int serv_dir (const struct args_data args, const struct request_data request);
+
+int serv_file (const struct args_data args, const struct request_data request, const int size);
+
+
+int get_file (const struct args_data args, const struct request_data request);
+
+
+struct request_data process_request (const int fd, const struct args_data args, const struct buffer_data inbuff);
+
+
+int post_edit (const struct buffer_data mainbuff, const struct request_data request);
+
+int get_edit_file (const struct args_data args, const struct request_data request);
+
+
+int get_config (const struct args_data args, const struct request_data request);
+
+
+int post_file (const struct buffer_data mainbuff, const struct request_data request);
+
+
+
+
+
+
+
+
+
+
+
 

@@ -16,6 +16,9 @@ int offset = 0;
 int i;
 
 int written = sock_writeold (connfd, out->p, out->len);
+if (written == -1)
+	return -1;
+
 if (written == out->len)
 	return written;
 
@@ -24,11 +27,11 @@ progress = written;
 while (progress < out->len)
 {
 wlen = 0;
-for (i = offset; i < string_sz - offset; ++i)
+for (i = offset; i < 500 - offset; ++i)
 {
 ++wlen;
 out->p [i] = out->p [wlen + progress];
-if (i + offset == string_sz)
+if (i + offset == 500)
 	break;
 
 if (progress + wlen == out->len)
@@ -38,6 +41,8 @@ if (progress + wlen == out->len)
 int totalwrite = wlen + offset;
 
 written = sock_writeold (connfd, out->p, totalwrite);
+if (written == -1)
+	return -1;
 
 if (written == totalwrite)
 	offset = 0;
@@ -53,7 +58,7 @@ out->p[i] = out->p[i + written];
 
 } // for copy offset
 
-} // if incomplete writee
+} // if incomplete writer
 progress += wlen;
 
 
@@ -107,7 +112,7 @@ minor[count] = 0;
 return (count);
 } // end midstr
 
-void buffcatf (struct buffer_data *buff, const char *format, ...)
+int buffcatf (struct buffer_data *buff, const char *format, ...)
 {
 va_list ap;
 va_start (ap, format);
@@ -207,7 +212,7 @@ if (main [i + x] != minor [x])
 
 } // for x
 if (x == minorlen)
-return (i + x - 1);
+return (i + x + 1);
 
 } // end if minor [0] hit
 
@@ -256,7 +261,8 @@ fbuff.len = read (locfd, fbuff.p, fbuff.max);
 read_progress += fbuff.len;
 
 int interim_progress = sock_writeold (fd, fbuff.p, fbuff.len);
-
+if (interim_progress == -1)
+	return -1;
 while (interim_progress < fbuff.len)
 {
 int cpylen = fbuff.len - interim_progress;
@@ -267,6 +273,8 @@ fbuff.p [i - interim_progress] = fbuff.p [i];
 fbuff.len = cpylen;
 
 interim_progress = sock_writeold (fd, fbuff.p, fbuff.len);
+if (interim_progress == -1)
+	return -1;
 } // while
 
 } // while loop
@@ -302,6 +310,8 @@ fbuff.len = read (locfd, fbuff.p, fbuff.max);
 read_progress += fbuff.len;
 
 int interim_progress = sock_writeold (fd, fbuff.p, fbuff.len);
+if (interim_progress == -1)
+	return -1;
 
 while (interim_progress < fbuff.len)
 {
@@ -313,6 +323,9 @@ memmove (fbuff.p, fbuff.p + interim_progress, cpylen);
 fbuff.len = cpylen;
 
 interim_progress = sock_writeold (fd, fbuff.p, fbuff.len);
+if (interim_progress == -1)
+	return -1;
+
 } // while
 
 } // while loop
@@ -393,7 +406,6 @@ int len = -1;
 while (len < 0)
 {
 len = write (connfd, buffer, size);
-
 if (len == -1)
 {
 usleep (1000);
@@ -403,18 +415,17 @@ deadtime -= basetime;
 
 if (deadtime >= timeout)
 	{return -1;}
-
 } // if -1
 
 //if (len < out.len
 
 } // while
 
-if (backdoorfd)
-{
-write (backdoorfd, "\n......write......\n", 19);
-write (backdoorfd, buffer, len);
-}
+//if (backdoorfd)
+//{
+//write (backdoorfd, "\n......write......\n", 19);
+//write (backdoorfd, buffer, len);
+//}
 
 
 
@@ -470,6 +481,9 @@ int offset = 0;
 int i;
 
 int written = sock_writeold (connfd, out, len);
+if (written == -1)
+	return -1;
+
 if (written == len)
 	return written;
 
@@ -478,11 +492,11 @@ progress = written;
 while (progress < len)
 {
 wlen = 0;
-for (i = offset; i < string_sz - offset; ++i)
+for (i = offset; i < 500 - offset; ++i)
 {
 ++wlen;
 out [i] = out [wlen + progress];
-if (i + offset == string_sz)
+if (i + offset == 500)
 	break;
 
 if (progress + wlen == len)
@@ -492,6 +506,8 @@ if (progress + wlen == len)
 int totalwrite = wlen + offset;
 
 written = sock_writeold (connfd, out, totalwrite);
+if (written == -1)
+	return -1;
 
 if (written == totalwrite)
 	offset = 0;
@@ -621,6 +637,7 @@ return (fd);
 
 }
 
+
 int strsearch (const char *hay, const char *needle, const int offset, const int haylen) 
 {
 // int haylen = strlen(hay);
@@ -635,6 +652,7 @@ int strsearch (const char *hay, const char *needle, const int offset, const int 
 return p - haystack + offset + strlen(needle);
     return -1; 
 } // strsearch	
+
 
 int buffsearch (const struct buffer_data hay, const char *needle, const int offset, const int roffset) 
 {
@@ -661,13 +679,13 @@ if (r == NULL)
 return r - haystack + offset;
 
 }
-
+/*
 int getlast (const char *str, const int c, const int len)
 {
 
 	
     char haystack[len];
-    memcpy(haystack, str, len);
+    strncpy(haystack, str, len);
 char *r = strrchr (haystack, c);
 
 if (r == NULL)
@@ -676,6 +694,21 @@ if (r == NULL)
 return r - haystack;
 
 	
+}
+*/
+
+int getlast (const char *str, const int next, const int end)
+{
+
+    for (int i = end; i >= 0; --i)
+    {
+    
+        
+        if (str[i] == next)
+            return i;
+    }
+
+    return  -1;
 }
 
 int countassets (const struct buffer_data buff)
@@ -687,7 +720,7 @@ int pos = 0;
 
 while (pos != -1)
 {
-pos = strsearch (buff.p, " src=", pos + 1, buff.len);
+pos = search (buff.p, " src=", pos + 1, buff.len);
 
 if (pos > -1)
 	++rtn;
@@ -703,9 +736,13 @@ char *b = "this is the base string";
 int lenb = strlen (b);
 printf ("%s\n", b);
 
-int a = strsearch (b, "string", 0, lenb);
+int a = strsearch (b, "this", 0, lenb);
 
-printf ("a is: %d\n", a);
+printf ("strstr is: %d\n", a);
+
+a = search (b, "this", 0, lenb);
+
+printf ("loop is: %d\n", a);
 
 
 

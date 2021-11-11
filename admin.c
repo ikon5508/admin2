@@ -1,4 +1,333 @@
 #include "admin.h"
+#include <signal.h>
+int get_action (const struct args_data args, const struct request_data request)
+{
+    char outb [maxbuffer];
+struct buffer_data out;
+out.p = outb;
+out.len = 0;
+out.max = maxbuffer;
+
+char fname [200];
+char ext [10];
+
+int d1 = getlast (request.path.p, (int) '.', request.path.len);
+strncpy (ext, request.path.p + d1, request.path.len);
+
+d1 = getlast (request.path.p, (int) '/', request.path.len);
+strncpy (fname, request.path.p + d1 + 1, request.path.len);
+int rtn = 1;
+int showedit = 0;
+if (strcmp(ext, ".c") == 0)
+		showedit = 1;
+
+if (strcmp(ext, ".h") == 0)
+		showedit = 1;
+
+if (strcmp(ext, ".htm") == 0)
+		showedit = 1;
+
+if (strcmp(ext, ".html") == 0)
+		showedit = 1;
+
+int preview = 0;
+if (args.showaction == 2)
+{
+if (strcmp(ext, ".jpg") == 0)
+		preview = 1; ++rtn;
+
+if (strcmp(ext, ".jpeg") == 0)
+		preview = 1; ++rtn;
+
+if (strcmp(ext, ".png") == 0)
+		preview = 1; ++rtn;
+
+if (strcmp(ext, ".c") == 0)
+		preview = 2;
+
+if (strcmp(ext, ".h") == 0)
+		preview = 2;
+
+if (strcmp(ext, ".htm") == 0)
+		preview = 2;
+
+if (strcmp(ext, ".html") == 0)
+		preview = 2;
+} // if args.showaction == 2
+
+
+
+buffcatf (&out, "<!DOCTYPE html>\n<html>\n<head>\n");
+
+buffcatf (&out,"<style>\n");
+buffcatf (&out,"body\n{\ntext-align:left;\nmargin-left:70px;\nbackground-color:aqua;\nfont-size:24px;\n}\n");
+buffcatf (&out, "a:link\n{\ncolor:midnightblue;\ntext-decoration:none;\n}\n");
+
+buffcatf (&out, ".button {\npadding-left:20px;\npadding-right:20px;\nfont-size:18px;\n}");
+
+
+buffcatf (&out, "</style>\n</head>\n<body>\n");
+
+buffcatf (&out, "<script>\n");
+buffcatf (&out, "let fname = \"%s\";\n", fname);
+
+buffcatf (&out, "function postdata (action, data) {\n");
+
+//var a = editor.getValue(); // or session.getValue
+ 
+buffcatf (&out, "form = document.createElement(\'form\');\n");
+buffcatf (&out, "form.setAttribute(\'method\', \'POST\');\n");
+buffcatf (&out, "form.setAttribute(\'enctype\', \'multipart/form-data\');\n");
+buffcatf (&out, "form.setAttribute(\'action\', window.location);\n");
+
+buffcatf (&out, "myvar = document.createElement(\'input\');\n");
+buffcatf (&out, "myvar.setAttribute(\'name\', action);\n");
+buffcatf (&out, "myvar.setAttribute(\'type\', \'hidden\');\n");
+buffcatf (&out, "myvar.setAttribute(\'value\', data);\n");
+
+
+buffcatf (&out, "form.appendChild(myvar);\n");
+buffcatf (&out, "document.body.appendChild(form);\n");
+buffcatf (&out, "form.submit();\n}\n");  
+// end function
+
+buffcatf (&out, "function frename () {\n");
+//buffcatf (&out, "window.alert (action);\n}\n");
+buffcatf(&out, "var newfname = prompt (\"New File Name:\", \"%s\");\n", fname);
+
+buffcatf (&out, "if (newfname == null) return;\n");
+
+
+buffcatf (&out, "window.alert (newfname); \npostdata (\'rename\', newfname);\n}\n");
+
+buffcatf (&out, "</script>\n");
+
+buffcatf (&out, "%s<br>\n", fname);
+
+buffcatf (&out, "<a href=\"/file%s\">View File</a><br>\n", request.path.p);
+if (showedit)
+	buffcatf (&out, "<a href=\"/edit%s\">Edit File</a><br>\n", request.path.p);
+
+buffcatf (&out, "<input type=\"button\" class=\"button\" value=\"Rename\" onclick=\"frename()\">");
+buffcatf (&out, "<input type=\"button\" class=\"button\" value=\"Copy\" onclick=\"fcopy()\">");
+buffcatf (&out, "<input type=\"button\" class=\"button\" value=\"Move\" onclick=\"fmove()\">");
+buffcatf (&out, "<input type=\"button\" class=\"button\" value=\"Delete\" onclick=\"fdelete()\"><br>\n");
+
+if (preview == 1)
+	buffcatf (&out, "<img src=\"/file%s\"></img>", request.path.p);
+
+//if (preview == 2)
+//{
+
+//	buffcatf (&out, "<img src=\"/file%s\"></img>", request.path.p);
+//} // if text preview
+buffcatf (&out, "</body></html>");
+struct string_data head;
+
+
+
+head.len = sprintf (head.p, "%s%s%s%s%d\n\n", hthead, connka, conthtml, contlen, out.len);
+sock_write (request.fd, head.p, head.len);
+
+sock_write (request.fd, out.p, out.len);
+return rtn;
+    
+
+} // get_action
+int post_action (const struct request_data request, const struct buffer_data inbuff)
+{
+loggingf ("%s\n", inbuff.p);
+send_txt (request.fd, "recieved", 0);
+exit (0);
+return 1;
+
+} // post action
+
+int main (int argc, char **argv)
+{
+
+signal(SIGPIPE, SIG_IGN);	
+struct args_data args;
+args.port = 9999;
+args.showaction = 2;
+// 0 for none, 1 show action page 2 load previewcon action page
+strcpy (args.base_path.p, ".");
+strcpy (args.editor_path.p, "aceeditor.htm");
+	
+
+init_log ("log.txt");
+
+loggingf ("admin load\nPort: %d\nPath: %s\nEditor: %s\n", args.port, args.base_path.p, args.editor_path.p);
+
+   // init_sockbackdoor ("bd.txt");
+
+struct sockaddr_in address;
+socklen_t addrlen = sizeof(address);
+
+int servfd = prepsocket (args.port);
+
+char inbuffer [string_sz];
+struct buffer_data inbuff;
+inbuff.p = inbuffer;
+inbuff.max = (string_sz);
+
+// main loop
+while (1)
+{
+struct request_data request;
+loggingf ("waiting\n");
+
+int connfd = accept(servfd, (struct sockaddr *)&address, (socklen_t*)&addrlen);
+sock_setnonblock (connfd);
+
+// keep alive loop
+int kacount = 1;
+int procint = 1;
+
+// keep alive loop
+while (1)
+{
+inbuff.len = sock_read (connfd, inbuff.p, inbuff.max);
+if (inbuff.len == -1)
+{ loggingf ("client timed out\n");  close (connfd); break; }
+
+request = process_request (connfd, args, inbuff);
+(request.method == 'G')?
+loggingf ("GET: %s\n", request.uri.p):
+loggingf ("POST: %s\n", request.uri.p);
+
+if (request.method == 'G' && request.mode == edit)
+    procint = get_edit_file (args, request);
+
+if (request.method == 'G' && request.mode == config)
+    procint = get_config (args, request);
+
+if (request.method == 'G' && request.mode == file)
+    procint = get_file (args, request);
+
+if (request.method == 'G' && request.mode == action)
+    procint = get_action (args, request);
+
+if (request.method == 'P' && request.mode == action)
+    procint = post_action (request, inbuff);
+
+
+if (request.method == 'P' && request.mode == edit)
+	procint = post_edit (inbuff, request);
+
+if (request.method == 'P' && request.mode == file)
+	procint = post_file (inbuff, request);
+
+if (request.mode == favicon)
+	servico (connfd);
+
+if (procint > 1)
+	kacount = procint;
+
+//if (procint == 1)
+	--kacount;
+
+if (procint == -1 || kacount == 0)
+{ softclose (connfd, &inbuff); break;}
+
+} // keep alive loop
+} // main loop
+} // main
+
+int serv_dir (const struct args_data args, const struct request_data request)
+{
+DIR *dp;
+struct dirent *ep;
+
+char outb [maxbuffer];
+struct buffer_data out;
+out.p = outb;
+out.len = 0;
+out.max = maxbuffer;
+
+
+ buffcatf (&out, "<!DOCTYPE html>\n<html>\n<head>\n");
+
+ buffcatf (&out,"<style>\n");
+ buffcatf (&out,"body\n{\ntext-align:left;\nmargin-left:70px;\nbackground-color:aqua;\nfont-size:24px;\n}\n");
+ buffcatf (&out, "a:link\n{\ncolor:midnightblue;\ntext-decoration:none;\n}\n");
+
+
+buffcatf (&out, ".button {\npadding-left:20px;\npadding-right:20px;\nfont-size:18px;\n}");
+ buffcatf (&out, "</style>\n</head>\n<body>\n");
+
+dp = opendir (request.fullpath.p);
+if (dp == NULL)
+	{send_txt (request.fd, "OOPS", 0); return -1;}
+
+buffcatf (&out, "%s<br>\n", request.path.p);
+
+buffcatf (&out, "<input type=\"button\" class=\"button\" value=\"make\">\n");
+
+buffcatf (&out, "<input type=\"button\" class=\"button\" value=\"mkdir\">");
+buffcatf (&out, "<input type=\"button\" class=\"button\" value=\"new\"><br>");
+buffcatf (&out, "<form enctype=\"multipart/form-data\" action=\"%s\" method=\"post\">\n", request.uri.p);
+buffcatf (&out, "<input type=\"file\" class=\"button\" name=\"myFile\">\n");
+buffcatf (&out, "<input type=\"submit\" class=\"button\"  value=\"upload\">\n</form>\n");
+
+while ((ep = readdir (dp)))
+{
+if (ep->d_name[0] == '.')
+	continue;
+	
+// 4 is dir 8 is file
+//loggingf ("dir: %s\n", ep->d_name);
+
+if (ep->d_type == 4)
+
+(request.uri.p[request.uri.len - 1] == '/')?
+buffcatf (&out, "<a href=\"%s%s\">%s/</a><br>\n", request.uri.p, ep->d_name, ep->d_name):
+buffcatf (&out, "<a href=\"%s/%s\">%s/</a><br>\n", request.uri.p, ep->d_name, ep->d_name);
+
+//loggingf ("char: %c, dirname is: %s\n", request.uri.p[request.uri.len - 1], request.uri.p);
+} // while
+
+closedir (dp);
+dp = opendir (request.fullpath.p);
+
+while ((ep = readdir (dp)))
+{
+if (ep->d_name[0] == '.')
+	continue;
+	
+if (ep->d_type == 8)
+
+if (args.showaction > 0)	
+(request.uri.p[request.uri.len - 1] == '/')?
+buffcatf (&out, "<a href=\"/action%s%s\">%s</a><br>\n", request.path.p, ep->d_name, ep->d_name):
+buffcatf (&out, "<a href=\"/action%s/%s\">%s</a><br>\n", request.path.p, ep->d_name, ep->d_name);
+
+if (args.showaction == 0)	
+(request.uri.p[request.uri.len - 1] == '/')?
+buffcatf (&out, "<a href=\"/file%s%s\">%s</a><br>\n", request.path.p, ep->d_name, ep->d_name):
+buffcatf (&out, "<a href=\"/file%s/%s\">%s</a><br>\n", request.path.p, ep->d_name, ep->d_name);
+
+
+//stradd (outbuff.p, ep->d_name, &outbuff.len);
+
+} // while
+
+
+
+buffcatf (&out, "</body>\n</html>");
+
+
+loggingf ("%d: bytes directory info\n", out.len);
+struct string_data head;
+
+head.len = sprintf (head.p, "%s%s%s%d\n\n", hthead, conthtml, contlen, out.len);
+sock_writeold (request.fd, head.p, head.len);
+sock_buffwrite (request.fd, &out);
+
+closedir (dp);
+
+return 1;
+} // serv_dir
 
 int serv_file (const struct args_data args, const struct request_data request, const int size)
 {
@@ -109,7 +438,8 @@ if (!strcmp(request.uri.p, "/config"))
 //if (d1 > 0)
 //request.keepalive = 1;
 
-d1 = strsearch (request.uri.p, "/action", 0, 8);
+//d1 = strsearch (request.uri.p, "/action", 0, 8);
+d1 = search (request.uri.p, "/action", 0, 8);
 if (d1 > 0)
 {
 request.mode = action;
@@ -117,7 +447,8 @@ memcpy (request.path.p, request.uri.p + d1, request.uri.len - d1);
 request.path.len = request.uri.len - d1 - 1;
 } // if edit
 
-d1 = strsearch (request.uri.p, "/edit", 0, 6);
+//d1 = strsearch (request.uri.p, "/edit", 0, 6);
+d1 = search (request.uri.p, "/edit", 0, 6);
 if (d1 > 0)
 {
 request.mode = edit;
@@ -125,7 +456,8 @@ memcpy (request.path.p, request.uri.p + d1, request.uri.len - d1);
 request.path.len = request.uri.len - d1 - 1;
 } // if edit
 
-d1 = strsearch (request.uri.p, "/file", 0, 6);
+//d1 = strsearch (request.uri.p, "/file", 0, 6);
+d1 = search (request.uri.p, "/file", 0, 6);
 if (d1 > 0)
 {
 request.mode = file;
@@ -137,7 +469,8 @@ request.fullpath.len = sprintf (request.fullpath.p, "%s%s", args.base_path.p, re
 
 if (request.method == 'P')
 {
-d1 = strsearch (inbuff.p, "boundary=", 0, inbuff.len);
+//d1 = strsearch (inbuff.p, "boundary=", 0, inbuff.len);
+d1 = search (inbuff.p, "boundary=", 0, inbuff.len);
 d2 = getnext (inbuff.p, 10, d1, d1 + 100);
 
 strncpy (request.boundary, inbuff.p + d1, d2 - d1 - 1);
@@ -184,7 +517,8 @@ filebuffer.len = read (filefd, filebuffer.p, filebuffer.max);
 close (editorfd);
 close (filefd);
 
-editorbuffer.procint = strsearch (editorbuffer.p, "DELIMETER", 0, editorbuffer.len);
+//editorbuffer.procint = strsearch (editorbuffer.p, "DELIMETER", 0, editorbuffer.len);
+editorbuffer.procint = search (editorbuffer.p, "DELIMETER", 0, editorbuffer.len);
 if (editorbuffer.procint < 0)
     {send_txt (request.fd, "failed to find DELIMETER", 0); return -1;}
 
@@ -269,7 +603,8 @@ int localfd = open (request.fullpath.p, O_WRONLY | O_TRUNC| O_CREAT, S_IRUSR | S
 if (localfd < 0)  {send_txt(request.fd,"1, error opening newfile",0); return -1; }
 
 // search for first boundary in initial xmission
-fbound = strsearch (mainbuff.p, request.boundary, request.procint, mainbuff.len);
+//fbound = strsearch (mainbuff.p, request.boundary, request.procint, mainbuff.len);
+fbound = search (mainbuff.p, request.boundary, request.procint, mainbuff.len);
 if (fbound > - 1)
 {
 // get past name data, since only one object is sent
@@ -279,7 +614,8 @@ startdata = getnext (mainbuff.p, 10, startdata + 1, mainbuff.len);
 while (mainbuff.p [startdata] == 10 || mainbuff.p [startdata] == 13 || mainbuff.p [startdata] == '.')
     ++startdata;
 
-rbound = strsearch (mainbuff.p, request.boundary, fbound + 1, mainbuff.len);
+//rbound = strsearch (mainbuff.p, request.boundary, fbound + 1, mainbuff.len);
+rbound = search (mainbuff.p, request.boundary, fbound + 1, mainbuff.len);
 if (rbound > - 1)
 {
 enddata = rbound - request.boundlen;
@@ -330,7 +666,8 @@ while (fbound == -1)
 {
 inbuff.len = sock_read (request.fd, inbuff.p, inbuff.max);
 if (inbuff.len == -1) {send_txt(request.fd,"1, reading timout",0); return -1; }
-fbound = strsearch (inbuff.p, request.boundary, 0, inbuff.len);
+//fbound = strsearch (inbuff.p, request.boundary, 0, inbuff.len);
+fbound = search (inbuff.p, request.boundary, 0, inbuff.len);
 ++cnt;
 if (cnt == 5) {send_txt(request.fd,"1, 1st boundary not found",0); return -1; }
 } // while fbound - 1
@@ -349,8 +686,8 @@ startdata = 0;
 
 while (rbound == -1)
 {
-rbound = strsearch (inbuff.p, request.boundary, inbuff.len - request.boundlen - 10, inbuff.len);
-
+//rbound = strsearch (inbuff.p, request.boundary, inbuff.len - request.boundlen - 10, inbuff.len);
+rbound = search (inbuff.p, request.boundary, inbuff.len - request.boundlen - 10, inbuff.len);
 if (rbound > 0)
 {
 enddata = inbuff.len - request.boundlen - 2;
@@ -493,7 +830,8 @@ memset (fname, 0, 100);
 int localfd;
 
 // search for first boundary in initial xmission
-fbound = strsearch (mainbuff.p, request.boundary, request.procint, mainbuff.len);
+//fbound = strsearch (mainbuff.p, request.boundary, request.procint, mainbuff.len);
+fbound = search (mainbuff.p, request.boundary, request.procint, mainbuff.len);
 if (fbound > - 1)
 {
 startdata = getnext (mainbuff.p, 10, fbound, mainbuff.len);
@@ -504,14 +842,16 @@ startdata = getnext (mainbuff.p, 10, startdata + 1, mainbuff.len);
 while (mainbuff.p [startdata] == 10 || mainbuff.p [startdata] == 13 || mainbuff.p [startdata] == '.')
     ++startdata;
 
-int d1 = strsearch (mainbuff.p, "filename=\"", fbound, mainbuff.len);
+//int d1 = strsearch (mainbuff.p, "filename=\"", fbound, mainbuff.len);
+int d1 = search (mainbuff.p, "filename=\"", fbound, mainbuff.len);
 int d2 = getnext (mainbuff.p, (int) '\"', d1, mainbuff.len);
 memcpy (fname, mainbuff.p + d1, d2 - d1);
 sprintf (fullpath, "%s/%s", request.fullpath.p, fname);
 localfd = open (fullpath, O_WRONLY | O_TRUNC| O_CREAT, S_IRUSR | S_IWUSR);
 if (localfd < 0)  {send_txt(request.fd,"1, error opening newfile",0); return -1; }
 
-rbound = strsearch (mainbuff.p, request.boundary, fbound + 1, mainbuff.len);
+//rbound = strsearch (mainbuff.p, request.boundary, fbound + 1, mainbuff.len);
+rbound = search (mainbuff.p, request.boundary, fbound + 1, mainbuff.len);
 if (rbound > - 1)
 {
 enddata = rbound - request.boundlen;
@@ -550,7 +890,8 @@ while (fbound == -1)
 {
 inbuff.len = sock_read (request.fd, inbuff.p, inbuff.max);
 if (inbuff.len == -1) {send_txt(request.fd,"1, reading timout",0); return -1; }
-fbound = strsearch (inbuff.p, request.boundary, 0, inbuff.len);
+//fbound = strsearch (inbuff.p, request.boundary, 0, inbuff.len);
+fbound = search (inbuff.p, request.boundary, 0, inbuff.len);
 ++cnt;
 if (cnt == 5) {send_txt(request.fd,"1, 1st boundary not found",0); return -1; }
 } // while fbound - 1
@@ -563,7 +904,8 @@ startdata = getnext (inbuff.p, 10, startdata + 1, inbuff.len);
 while (inbuff.p [startdata] == 10 || inbuff.p [startdata] == 13 || inbuff.p [startdata] == '.')
     ++startdata;
 
-int d1 = strsearch (inbuff.p, "filename=\"", fbound, inbuff.len);
+//int d1 = strsearch (inbuff.p, "filename=\"", fbound, inbuff.len);
+int d1 = search (inbuff.p, "filename=\"", fbound, inbuff.len);
 int d2 = getnext (inbuff.p, (int) '\"', d1, inbuff.len);
 memcpy (fname, inbuff.p + d1, d2 - d1);
 sprintf (fullpath, "%s/%s", request.fullpath.p, fname);
@@ -579,8 +921,8 @@ startdata = 0;
 // place all new contents in file - boundary
 while (rbound == -1)
 {
-rbound = strsearch (inbuff.p, request.boundary, inbuff.len - request.boundlen - 10, inbuff.len);
-
+//rbound = strsearch (inbuff.p, request.boundary, inbuff.len - request.boundlen - 10, inbuff.len);
+rbound = search (inbuff.p, request.boundary, inbuff.len - request.boundlen - 10, inbuff.len);
 
 if (rbound > 0)
 {
@@ -654,269 +996,6 @@ close (localfd);
 return 1;
 
 } //post file
-
-int get_action (const struct args_data args, const struct request_data request)
-{
-    char outb [maxbuffer];
-struct buffer_data out;
-out.p = outb;
-out.len = 0;
-out.max = maxbuffer;
-
-char fname [200];
-char ext [10];
-
-int d1 = getlast (request.path.p, (int) '.', request.path.len);
-strncpy (ext, request.path.p + d1, request.path.len);
-
-d1 = getlast (request.path.p, (int) '/', request.path.len);
-strncpy (fname, request.path.p + d1 + 1, request.path.len);
-
-buffcatf (&out, "<!DOCTYPE html>\n<html>\n<head>\n");
-
-buffcatf (&out,"<style>\n");
-buffcatf (&out,"body\n{\ntext-align:left;\nmargin-left:70px;\nbackground-color:aqua;\nfont-size:52px;\n}\n");
-buffcatf (&out, "a:link\n{\ncolor:midnightblue;\ntext-decoration:none;\n}\n");
-
-buffcatf (&out, ".button {\npadding-left:20px;\npadding-right:20px;\nfont-size:18px;\n}");
-
-
-buffcatf (&out, "</style>\n</head>\n<body>\n");
-
-buffcatf (&out, "<script>\n");
-buffcatf (&out, "let fname = \"%s\";\n", fname);
-
-buffcatf (&out, "function postdata (data) {\n");
-
-//var a = editor.getValue(); // or session.getValue
- 
-buffcatf (&out, "form = document.createElement(\'form\');\n");
-buffcatf (&out, "form.setAttribute(\'method\', \'POST\');\n");
-buffcatf (&out, "form.setAttribute(\'enctype\', \'multipart/form-data\');\n");
-buffcatf (&out, "form.setAttribute(\'action\', window.location);\n");
-
-buffcatf (&out, "myvar = document.createElement(\'input\');\n");
-buffcatf (&out, "myvar.setAttribute(\'name\', \'action\');\n");
-buffcatf (&out, "myvar.setAttribute(\'type\', \'hidden\');\n");
-buffcatf (&out, "myvar.setAttribute(\'value\', data);\n");
-
-
-buffcatf (&out, "form.appendChild(myvar);\n");
-buffcatf (&out, "document.body.appendChild(form);\n");
-buffcatf (&out, "form.submit();\n}\n");  
-// end function
-
-buffcatf (&out, "function frename () {\n");
-//buffcatf (&out, "window.alert (action);\n}\n");
-buffcatf(&out, "var newfname = prompt (\"New File Name:\", \"%s\");\n", fname);
-
-
-
-
-buffcatf (&out, "window.alert (newfname); \npostdata (fname);\n}\n");
-
-buffcatf (&out, "</script>\n");
-
-buffcatf (&out, "path: %s<br>\n", request.path.p);
-
-buffcatf (&out, "<a href=\"/file%s\">View File</a><br>\n", request.path.p);
-buffcatf (&out, "<a href=\"/edit%s\">Edit File</a><br>\n", request.path.p);
-buffcatf (&out, "<input type=\"button\" class=\"button\" value=\"Rename\" onclick=\"frename()\">");
-buffcatf (&out, "<input type=\"button\" class=\"button\" value=\"Copy\" onclick=\"fcopy()\">");
-buffcatf (&out, "<input type=\"button\" class=\"button\" value=\"Move\" onclick=\"fmove()\">");
-buffcatf (&out, "<input type=\"button\" class=\"button\" value=\"Delete\" onclick=\"fdelete()\"><br>\n");
-
-buffcatf (&out, "</body></html>");
-struct string_data head;
-
-
-
-head.len = sprintf (head.p, "%s%s%s%s%d\n\n", hthead, connka, conthtml, contlen, out.len);
-sock_write (request.fd, head.p, head.len);
-
-sock_write (request.fd, out.p, out.len);
-return 2;
-    
-
-} // get_action
-int post_action (const struct request_data request, const struct buffer_data inbuff)
-{
-loggingf ("%s\n", inbuff.p);
-send_txt (request.fd, "recieved", 0);
-exit (0);
-return 1;
-
-} // post action
-
-int main (int argc, char **argv)
-{
-struct args_data args;
-args.port = 9999;
-strcpy (args.base_path.p, ".");
-strcpy (args.editor_path.p, "aceeditor.htm");
-	
-
-init_log ("log.txt");
-
-loggingf ("admin load\nPort: %d\nPath: %s\nEditor: %s\n", args.port, args.base_path.p, args.editor_path.p);
-
-    init_sockbackdoor ("bd.txt");
-
-struct sockaddr_in address;
-socklen_t addrlen = sizeof(address);
-
-int servfd = prepsocket (args.port);
-
-char inbuffer [string_sz];
-struct buffer_data inbuff;
-inbuff.p = inbuffer;
-inbuff.max = (string_sz);
-
-// main loop
-while (1)
-{
-struct request_data request;
-loggingf ("waiting\n");
-
-int connfd = accept(servfd, (struct sockaddr *)&address, (socklen_t*)&addrlen);
-sock_setnonblock (connfd);
-
-// keep alive loop
-int kacount = 1;
-int procint = 1;
-
-// keep alive loop
-while (1)
-{
-inbuff.len = sock_read (connfd, inbuff.p, inbuff.max);
-if (inbuff.len == -1)
-{ loggingf ("client timed out\n");  close (connfd); break; }
-
-request = process_request (connfd, args, inbuff);
-(request.method == 'G')?
-loggingf ("GET: %s\n", request.uri.p):
-loggingf ("POST: %s\n", request.uri.p);
-
-if (request.method == 'G' && request.mode == edit)
-    procint = get_edit_file (args, request);
-
-if (request.method == 'G' && request.mode == config)
-    procint = get_config (args, request);
-
-if (request.method == 'G' && request.mode == file)
-    procint = get_file (args, request);
-
-if (request.method == 'G' && request.mode == action)
-    procint = get_action (args, request);
-
-if (request.method == 'P' && request.mode == action)
-    procint = post_action (request, inbuff);
-
-
-if (request.method == 'P' && request.mode == edit)
-	procint = post_edit (inbuff, request);
-
-if (request.method == 'P' && request.mode == file)
-	procint = post_file (inbuff, request);
-
-if (request.mode == favicon)
-	servico (connfd);
-
-if (procint > 1)
-	kacount = procint;
-
-//if (procint == 1)
-	--kacount;
-
-if (procint == -1 || kacount == 0)
-{ softclose (connfd, &inbuff); break;}
-
-} // keep alive loop
-} // main loop
-} // main
-
-int serv_dir (const struct args_data args, const struct request_data request)
-{
-DIR *dp;
-struct dirent *ep;
-
-char outb [maxbuffer];
-struct buffer_data out;
-out.p = outb;
-out.len = 0;
-out.max = maxbuffer;
-
-
- buffcatf (&out, "<!DOCTYPE html>\n<html>\n<head>\n");
-
- buffcatf (&out,"<style>\n");
- buffcatf (&out,"body\n{\ntext-align:left;\nmargin-left:70px;\nbackground-color:aqua;\nfont-size:24px;\n}\n");
- buffcatf (&out, "a:link\n{\ncolor:midnightblue;\ntext-decoration:none;\n}\n");
-
-
-buffcatf (&out, ".button {\npadding-left:20px;\npadding-right:20px;\nfont-size:18px;\n}");
- buffcatf (&out, "</style>\n</head>\n<body>\n");
-
-dp = opendir (request.fullpath.p);
-if (dp == NULL)
-	{send_txt (request.fd, "OOPS", 0); return -1;}
-
-buffcatf (&out, "%s<br>\n", request.path.p);
-
-buffcatf (&out, "<input type=\"button\" class=\"button\" value=\"make\">\n");
-
-buffcatf (&out, "<input type=\"button\" class=\"button\" value=\"mkdir\">");
-buffcatf (&out, "<input type=\"button\" class=\"button\" value=\"new\"><br>");
-buffcatf (&out, "<form enctype=\"multipart/form-data\" action=\"%s\" method=\"post\">\n", request.uri.p);
-buffcatf (&out, "<input type=\"file\" class=\"button\" name=\"myFile\">\n");
-buffcatf (&out, "<input type=\"submit\" class=\"button\"  value=\"upload\">\n</form>\n");
-
-while ((ep = readdir (dp)))
-{
-if (ep->d_name[0] == '.')
-	continue;
-	
-// 4 is dir 8 is file
-//loggingf ("dir: %s\n", ep->d_name);
-
-if (ep->d_type == 4)
-buffcatf (&out, "<a href=\"%s/%s\">%s/</a><br>\n", request.uri.p, ep->d_name, ep->d_name);
-
-} // while
-
-closedir (dp);
-dp = opendir (request.fullpath.p);
-
-while ((ep = readdir (dp)))
-{
-if (ep->d_name[0] == '.')
-	continue;
-	
-if (ep->d_type == 8)
-buffcatf (&out, "<a href=\"/action%s/%s\">%s</a><br>\n", request.path.p, ep->d_name, ep->d_name);
-
-
-
-//stradd (outbuff.p, ep->d_name, &outbuff.len);
-
-} // while
-
-
-
-buffcatf (&out, "</body>\n</html>");
-
-
-loggingf ("%d: bytes directory info\n", out.len);
-struct string_data head;
-
-head.len = sprintf (head.p, "%s%s%s%d\n\n", hthead, conthtml, contlen, out.len);
-sock_writeold (request.fd, head.p, head.len);
-sock_buffwrite (request.fd, &out);
-
-closedir (dp);
-
-return 1;
-} // serv_dir
 
 void softclose (const int fd, struct buffer_data *inbuff)
 {
