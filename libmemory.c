@@ -77,8 +77,8 @@ if (buffer->p == NULL)
     return size;
 } // init_buffer
 
-/*
-int getnext (const char *str, const char next, const int start, int end)
+
+int getnext (const char *str, const int next, const int start, int end)
 {
 const int debug = 0;
 
@@ -97,7 +97,7 @@ if (str[i] == next)
 
     return  -1;
 } // getnext
-*/
+
 
 int midstr(const char *major, char *minor, int start, const int end)
 {
@@ -112,7 +112,7 @@ minor[count] = 0;
 return (count);
 } // end midstr
 
-int buffcatf (struct buffer_data *buff, const char *format, ...)
+void buffcatf (struct buffer_data *buff, const char *format, ...)
 {
 va_list ap;
 va_start (ap, format);
@@ -666,6 +666,7 @@ return p - haystack + offset + strlen(needle);
     return -1; 
 } // buffwrite
 
+/*
 int getnext (const char *base, int c, const int offset, const int len)
 {
 
@@ -679,6 +680,7 @@ if (r == NULL)
 return r - haystack + offset;
 
 }
+*/
 /*
 int getlast (const char *str, const int c, const int len)
 {

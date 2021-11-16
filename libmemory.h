@@ -47,7 +47,7 @@ int midstr(const char *major, char *minor, int start, const int end);
 int getlast (const char *str, const int c, const int len);
 int search (const char *main, const char *minor, const int start, const int end);
 int sock_buffwrite (const int connfd, struct buffer_data *out);
-int buffcatf (struct buffer_data *buff, const char *format, ...);
+void buffcatf (struct buffer_data *buff, const char *format, ...);
 int prepsocket (const int PORT);
 int sock_setnonblock (const int fd);
 int sock_writeold (const int connfd, const char *buffer, const int size);
