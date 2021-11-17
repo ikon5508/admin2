@@ -1,0 +1,25 @@
+<html>
+	<body>
+		<script>
+
+fetch('/file')
+//.catch(e => { console.log(e)});
+//				.then(function (response){window.alert (response.status)});
+//returns 200 for success
+
+
+
+.then(res => res.text()) 
+.then(res => console.log(res))
+.catch(err => console.error(err));
+
+
+
+//.then(function (response){console.log (response.text)});
+		</script>
+</html>
+
+
+//var data = new FormData();
+//data.append("KEY", "VALUE");
+//fetch("URL", { method: "POST", body: data });
