@@ -4,13 +4,13 @@
 
 fetch('/file')
 //.catch(e => { console.log(e)});
-//				.then(function (response){window.alert (response.status)});
+//.then(function (response){window.alert (response.status)});
 //returns 200 for success
 
 
 
 .then(res => res.text()) 
-.then(res => console.log(res))
+.then(res => window.alert(res))
 .catch(err => console.error(err));
 
 

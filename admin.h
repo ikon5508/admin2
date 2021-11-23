@@ -33,17 +33,17 @@ struct string_data editor_path;
 
 struct request_data
 {
-struct string_data uri;
-struct string_data path;
-struct string_data fullpath;
+char uri [string_sz];
+char path [string_sz];
+char fullpath [string_sz];
+
+char resourcename [200];
+char ext [20];
 
 const struct buffer_data *mainbuff;
 char method;
 int keepalive;
 int fd;
-int procint;
-char boundary [100];
-int boundlen;
 
 enum emode
 {err, action, file, edit, upload, config, root, favicon, websock} mode;
@@ -53,7 +53,7 @@ enum emode
 int servico (const int fd);
 void softclose (const int fd, struct buffer_data *inbuff);
 int send_err (const int fd, const int code);
-int send_txt (const int fd, const char *txt, int len);
+int send_txt (const int fd, const char *txt);
 int send_ftxt (const int fd, const char *format, ...);
 int serv_dir (const struct args_data args, const struct request_data request);
 int serv_file (const struct args_data args, const struct request_data request, const int size);
@@ -61,10 +61,10 @@ int get_file (const struct args_data args, const struct request_data request);
 
 struct request_data process_request (const int fd, const struct args_data args, const struct buffer_data inbuff);
 
-int post_edit (const struct buffer_data mainbuff, const struct request_data request);
+int put_edit (const struct request_data request);
 int get_edit_file (const struct args_data args, const struct request_data request);
 int get_config (const struct args_data args, const struct request_data request);
-int post_file (const struct buffer_data mainbuff, const struct request_data request);
+int put_file (const struct request_data request);
 
 
 

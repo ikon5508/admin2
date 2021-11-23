@@ -7,8 +7,7 @@
   <style type="text/css" media="screen">
     body {
         overflow: hidden;
-background-color: blue;
-	font-family: Arial, Helvetica, sans-serif;
+font-family: Arial, Helvetica, sans-serif;
 }
 .button {
     padding-left:20px;
@@ -59,24 +58,29 @@ function save ()
 {
 //window.alert ("test function");
 
-var a = editor.getValue(); // or session.getValue
+let a = editor.getValue(); // or session.getValue
  
 form = document.createElement('form');
 form.setAttribute('method', 'POST');
 form.setAttribute('enctype', 'multipart/form-data');
 form.setAttribute('action', window.location);
 
-myvar = document.createElement('input');
-myvar.setAttribute('name', 'editor');
-myvar.setAttribute('type', 'hidden');
-myvar.setAttribute('value', a);
+//myvar = document.createElement('input');
+//myvar.setAttribute('name', 'editor');
+//myvar.setAttribute('type', 'hidden');
+//myvar.setAttribute('value', a);
 
+//form.appendChild(myvar);
+//document.body.appendChild(form);
+//form.submit();   
 
-form.appendChild(myvar);
-document.body.appendChild(form);
-form.submit();   
+//window.alert (a);
 
+fetch (window.location, {method: "PUT", body: JSON.stringify (a), headers: {"Content-type": "application/json; charset=UTF-8"}})
+.then(res => res.text()) 
+.then(res => window.alert(res))
 
+.catch(err => window.alertr(err));
 } // function save
 
 function mode (evt)
@@ -173,12 +177,6 @@ function fntsz (evt) {
 <input type="button" class="button" value="cut" onclick="cut()">
 <input type="button" class="button" value="copy" onclick="copy()">
 <input type="button" class="button" value="paste" onclick="paste()">
-<br>
-
-<input type="button" class="button" value="save" onclick="save()">
-<input type="button" class="button" value="test" onclick="test()">
-
-
 </div>
 <script src="/file/ace-builds/src-noconflict/ace.js" type="text/javascript" charset="utf-8"></script>
 <script>

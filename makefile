@@ -1,5 +1,8 @@
 admin: admin.c admin.h libmemory.c libmemory.h
-	clang -g -o admin admin.c libmemory.c
+	clang -g -o admin admin.c libmemory.c -lcrypto
 
-ssladmin: ssladmin.c admin.h libmemory.c libmemory.h
-	clang -g -o ssladmin ssladmin.c libmemory.c -lssl -lcrypto
+ssl_server: ssl_server.c
+	clang -g -o ssl_server ssl_server.c -lssl -lcrypto
+
+hellow: hellow.c 
+	clang -g -o hellow hellow.c -lssl -lcrypto

@@ -16,8 +16,9 @@
 #include <time.h>
 
 #define maxbuffer 100000
-
-#define string_sz 1500
+#define nameholder 100
+#define string_sz 1000
+//#define entry 500
 
 struct buffer_data
 {
@@ -34,17 +35,10 @@ int procint;
 int len;
 };
 
-struct search_data
-{
-int rtn;
-int offset;
-};
-
-
 int init_buffer (struct buffer_data *buffer, const int size);
 int getnext (const char *base, const int c, const int offset, const int len);
 int midstr(const char *major, char *minor, int start, const int end);
-int getlast (const char *str, const int c, const int len);
+int getlast (const char *str, const int c, int len);
 int search (const char *main, const char *minor, const int start, const int end);
 int sock_buffwrite (const int connfd, struct buffer_data *out);
 void buffcatf (struct buffer_data *buff, const char *format, ...);
@@ -66,4 +60,8 @@ int strsearch (const char *hay, const char *needle, const int offset, const int 
 
 int buffsearch (const struct buffer_data hay, const char *needle, const int offset, const int roffset);
 
+int ftrim (char *buff, int len);
+int rtrim (char *buff);
+
+void save_buffer (const struct buffer_data b, const char *path);
 extern const int timeout;

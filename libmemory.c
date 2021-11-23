@@ -699,8 +699,11 @@ return r - haystack;
 }
 */
 
-int getlast (const char *str, const int next, const int end)
+int getlast (const char *str, const int next, int end)
 {
+
+if (!end)
+	end = strlen (str);
 
     for (int i = end; i >= 0; --i)
     {
@@ -729,24 +732,54 @@ if (pos > -1)
 
 }
 return rtn;
-}
+} // count assets
 
-/*
-int main ()
+int rtrim (char *buff)
 {
-char *b = "this is the base string";
-int lenb = strlen (b);
-printf ("%s\n", b);
+int len = strlen (buff);
+	
+--len;
 
-int a = strsearch (b, "this", 0, lenb);
-
-printf ("strstr is: %d\n", a);
-
-a = search (b, "this", 0, lenb);
-
-printf ("loop is: %d\n", a);
+while (buff [len] == 32 || buff [len] == 10 || buff [len] == 13)
+--len;
 
 
+++len;
+buff [len] = 0;
+return len;
+}  // rtrim
 
-}
-*/
+
+int ftrim (char *buff, int len)
+{
+if (!len)
+	len = strlen (buff);
+	
+--len;
+
+int pos = 0;
+
+while (buff [pos] == 32 || buff [pos] == 10 || buff [pos] == 13)
+++pos;
+
+
+//++len;
+//buff [len] = 0;
+
+memmove (buff, buff + pos, len - pos + 1);
+buff [len - pos + 1] = 0;
+
+return len;
+}  // ftrim
+
+void save_buffer (const struct buffer_data b, const char *path)
+{
+int localfd = open (path, O_WRONLY | O_TRUNC| O_CREAT, S_IRUSR | S_IWUSR);
+if (localfd < 0)
+	return ;
+
+write (localfd, b.p, b.len);
+
+
+close (localfd);
+}// save_page
