@@ -27,8 +27,8 @@ int port;
 int ssl;
 int showaction; 
 // 0 for  non, 1 for show action page 2 for preview file
-struct string_data base_path;
-struct string_data editor_path;
+char base_path [string_sz];
+char editor_path [string_sz];
 };
 
 struct request_data
@@ -42,14 +42,18 @@ char ext [20];
 
 const struct buffer_data *mainbuff;
 char method;
-int keepalive;
 int fd;
 
+int localfd;
+int procint;
+long content_len;
+int progress;
 enum emode
 {err, action, file, edit, upload, config, root, favicon, websock} mode;
 };
 
 
+void parse_json (const struct buffer_data *src, struct string_data *dest);
 int servico (const int fd);
 void softclose (const int fd, struct buffer_data *inbuff);
 int send_err (const int fd, const int code);

@@ -279,13 +279,13 @@ struct args_data args;
 args.port = 9999;
 args.showaction = 2;
 // 0 for none, 1 show action page 2 load previewcon action page
-strcpy (args.base_path.p, ".");
-strcpy (args.editor_path.p, "aceeditor.htm");
+strcpy (args.base_path, ".");
+strcpy (args.editor_path, "aceeditor.htm");
 	
 
 init_log ("log.txt");
 
-loggingf ("admin load\nPort: %d\nPath: %s\nEditor: %s\n", args.port, args.base_path.p, args.editor_path.p);
+loggingf ("admin load\nPort: %d\nPath: %s\nEditor: %s\n", args.port, args.base_path, args.editor_path);
 
     init_sockbackdoor ("bd.txt");
 
@@ -319,8 +319,12 @@ inbuff.len = sock_read (connfd, inbuff.p, inbuff.max);
 if (inbuff.len == -1)
 { loggingf ("client timed out\n");  close (connfd); break; }
 
+//inbuff.p[inbuff.len + 1] = 0;
 request = process_request (connfd, args, inbuff);
 request.mainbuff = &inbuff;
+
+if (request.procint == -1)
+	exit (0);
 
 //loggingf ("the god damned motherfucking method is: %c!!!!!!!!!!!\n", request.method);
 
@@ -350,6 +354,8 @@ if (request.method == 'E' && request.mode == action)
 //if (request.method == 'O' && request.mode == action)
 //    procint = post_action (request, inbuff);
 
+if (request.method == 'O' && request.mode == edit)
+	procint = put_edit (request);
 if (request.method == 'U' && request.mode == edit)
 	procint = put_edit (request);
 
@@ -397,29 +403,16 @@ buffcatf (&out, ".button {\npadding-left:20px;\npadding-right:20px;\nfont-size:1
 buffcatf (&out, "<script>");
 buffcatf (&out, "function get_multi () { \n");
 
-//buffcatf (&out, "window.alert (\"wow\");\n");
-
 buffcatf (&out, "var count = window.prompt (\"How Many\", 2);\n");
-buffcatf (&out, "form = document.createElement(\'form\');\n");
-buffcatf (&out, "form.setAttribute(\'method\', \'GET\');\n");
-buffcatf (&out, "form.setAttribute(\'action\', \'/upload%s\');\n", request.path);
-
-buffcatf (&out, "myvar = document.createElement(\'input\');\n");
-buffcatf (&out, "myvar.setAttribute(\'name\', \'count\');\n");
-buffcatf (&out, "myvar.setAttribute(\'type\', \'hidden\');\n");
-buffcatf (&out, "myvar.setAttribute(\'value\', count);\n");
-
-//buffcatf (&out, "myvar2 = document.createElement(\'input\');\n");
-//buffcatf (&out, "myvar2.setAttribute(\'name\', \'path\');\n");
-//buffcatf (&out, "myvar2.setAttribute(\'type\', \'hidden\');\n");
-//buffcatf (&out, "myvar2.setAttribute(\'value\', \'/upload%s\');\n", request.path);
+buffcatf (&out, "var content = \"<form enctype=\'multipart/form-data\' action=\'%s\' method=\'PUT\'>\";\n", request.uri);
+buffcatf (&out, "var i;\n");
+buffcatf (&out, "for (i= 0; i < count; ++i)\n");
+buffcatf (&out, "content += \"<input type=\'file\' class=\'button\' name=\'myFile\'>\";\n");
+buffcatf (&out, "content += \"<input type=\'submit\' class=\'button\'  value=\'upload\'>\";\n");
+buffcatf (&out, "content += \"</form>\";\n");
+buffcatf (&out, "document.getElementById(\"uploader\").innerHTML = content;\n}\n");
 
 
-buffcatf (&out, "form.appendChild(myvar);\n");
-
-//buffcatf (&out, "form.appendChild(myvar2);\n");
-buffcatf (&out, "document.body.appendChild(form);\n");
-buffcatf (&out, "form.submit();\n}\n");  
 // end function
 
 buffcatf (&out, "</script>\n");
@@ -440,9 +433,12 @@ buffcatf (&out, "<input type=\"button\" class=\"button\" value=\"search\">\n");
 // addonclick here
 buffcatf(&out, "<input type=\"button\" class=\"button\" value=\"Multiple Upload\" onclick=\"get_multi ()\">\n");
 //
+
+buffcatf (&out, "<div id=\"uploader\">\n");
 buffcatf (&out, "<form enctype=\"multipart/form-data\" action=\"%s\" method=\"post\">\n", request.uri);
 buffcatf (&out, "<input type=\"file\" class=\"button\" name=\"myFile\">\n");
 buffcatf (&out, "<input type=\"submit\" class=\"button\"  value=\"upload\">\n</form>\n");
+buffcatf (&out, "</div>\n");
 
 while ((ep = readdir (dp)))
 {
@@ -659,9 +655,70 @@ request.mode = websock;
 //d1 = search (inbuff.p, "Sec-WebSocket-Accept: ", d1, inbuff.len);
 } // if websock
 
-sprintf (request.fullpath, "%s%s", args.base_path.p, request.path);
+sprintf (request.fullpath, "%s%s", args.base_path, request.path);
 
-return (request);
+if (request.method == 'E')
+	return (request);
+
+
+d1 = search (inbuff.p, "ength: ", d2, inbuff.len);
+if (d1 ==-1) {send_txt (fd, "error ength: "); request.procint = -1; return request;}
+d2 = getnext (inbuff.p, 10, d1, inbuff.len);
+if (d2 ==-1) {send_txt (fd, "error end (10)"); request.procint = -1; return request;}
+char temp [100] = "";
+
+midstr (inbuff.p, temp, d1, d2);
+rtrim (temp);
+
+//send_ftxt (fd, "length: |%s|", temp);
+
+//exit (0);
+request.content_len = atol (temp);
+
+if (request.mode == edit)
+{
+request.localfd = open (request.fullpath, O_WRONLY | O_TRUNC | O_CREAT, S_IRUSR | S_IWUSR);
+if (request.localfd == -1)
+{loggingf ("error opening local file, 688"); exit (0);}
+
+d1 = getnext (inbuff.p, (int) '\"', d1, inbuff.len);
+if (d1 ==-1)
+{loggingf ("data not started in 1st xmission, returning\n");return request;}
+
+loggingf ("data started in 1st xmission\n");
+
+request.procint = 1;
+struct string_data out;
+struct buffer_data in;
+char inn[string_sz];
+in.p = inn;
+in.max = string_sz;
+in.len = 0;
+
+int single = 0;
+if (inbuff.p[inbuff.len-1] == '\"')
+{loggingf ("single xmission detected, adjusting\n"); single = 1;}
+
+in.len = midstr (inbuff.p, in.p, d1, inbuff.len);
+
+parse_json (&in, &out);
+
+request.progress = in.len;
+
+write (request.localfd, out.p, out.len - single);
+
+// detecting if it started, but not finished here
+if (single)
+{close (request.localfd); request.procint = 2;}
+return request;
+//loggingf ("first xmission check exit(0)\n");
+} // if edit
+
+// content len
+// boundary
+// startdata or actually begin data
+//
+return request;	
 } // process_request
 
 int get_edit_file (const struct args_data args, const struct request_data request)
@@ -684,7 +741,7 @@ filebuffer.p = fbuffer;
 filebuffer.max = maxbuffer;
 
 
-int editorfd = open (args.editor_path.p, O_RDONLY);
+int editorfd = open (args.editor_path, O_RDONLY);
 if (editorfd < 0)
     {send_txt (request.fd, "bad editor"); return -1;}
 
@@ -754,53 +811,81 @@ sock_buffwrite (request.fd, &outbuff);
 return 4;
 } // get_edit_file
 
+void parse_json (const struct buffer_data *src, struct string_data *dest)
+{
+dest->len = 0;
+for (int i = 0; i < src->len; ++i)
+{
+if (src->p[i] == '\\')
+{
+if (src->p[i+1] == 'n')
+	dest->p[dest->len] = 10;
+
+if (src->p[i+1] == '\\')
+	dest->p[dest->len] = '\\';
+
+if (src->p[i+1] == '\"')
+	dest->p[dest->len] = '\"';
+
+if (src->p[i+1] == '\'')
+	dest->p[dest->len] = '\'';
+
+++i;
+++dest->len;
+continue;
+} // if
+dest->p[dest->len] = src->p[i];
+++dest->len;
+} // for
+
+}// parse json
+
 int put_edit (const struct request_data request)
 {
 loggingf ("put edit commence\n");
 
+if (request.procint == 2)
+	return 1;
+
 struct string_data filedata;
 filedata.len = 0;
+struct buffer_data inbuff;
+char inb [string_sz];
+inbuff.max = string_sz;
+inbuff.p = inb;
 
-char temp [20] = "";
+int startdata = request.procint;
+int progress = request.progress;
+int enddata = 0;
+//int localfd = open ("putter_test.txt", O_WRONLY | O_TRUNC | O_CREAT, S_IRUSR | S_IWUSR);
 
-int d1 = search (request.mainbuff->p, "ength: ", 1, request.mainbuff->len);
-int d2 = getnext (request.mainbuff->p, 10, d1, request.mainbuff->len);
-
-midstr (request.mainbuff->p, temp, d1, d2);
-rtrim (temp);
-
-int content_len = atoi (temp);
-
-d1 = getnext (request.mainbuff->p, (int) '\"', d2, request.mainbuff->len);
-
-for (int i = d1 + 1; i < request.mainbuff->len; ++i)
+//write (localfd, filedata.p, filedata.len);
+while (!enddata)
 {
-if (request.mainbuff->p[i] == '\\' && request.mainbuff->p[i + 1] == 'n')
+	inbuff.len = sock_read (request.fd, inbuff.p, inbuff.max);
+if (inbuff.len == -1)
+{ loggingf ("timeout while reading:\n"); break; }
+progress += inbuff.len;
+printf ("%c, progress: %d, len: %ld\n", inbuff.p[inbuff.len -1], progress, request.content_len);
+
+//if (inbuff.p[inbuff.len-1] == '\"')
+if (progress == request.content_len)
+{printf ("enddata found, adjusting\n"); --inbuff.len; enddata = 1;};
+
+if (startdata == 0 && inbuff.p[0] == '\"')
 {
-filedata.p[filedata.len] = 10;
-++i;
-++filedata.len;
---content_len;
-}else{
-filedata.p[filedata.len] = request.mainbuff->p[i];
-++filedata.len;
-}//if
+loggingf ("data not startted but successfully detected in 2nd xmission");
+memmove (inbuff.p, inbuff.p + 1, inbuff.len - 1);
 
-} // for
-	
-int localfd = open ("putter_test.txt", O_WRONLY | O_TRUNC| O_CREAT, S_IRUSR | S_IWUSR);
-write (localfd, filedata.p, filedata.len);
+}
+//write (localfd, inbuff.p, inbuff.len);
+parse_json (&inbuff, &filedata);
+write (request.localfd, filedata.p, filedata.len);
+startdata = 1;
+}
 
-
-close (localfd);
-// content len will be one less when done
-//loggingf ("contlen: %d, file-len: %d\n", content_len, filedata.len);
-
-if (request.mainbuff->p [request.mainbuff->len -1] == '\"')
-	loggingf ("!!!single reciever!!!");
-
-send_ftxt (request.fd, "it worked |%s|", temp);
-return 1;
+send_txt (request.fd, "it worked");
+close (request.localfd);
 } //put edit
 
 int get_config (const struct args_data args, const struct request_data request)

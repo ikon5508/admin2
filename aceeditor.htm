@@ -65,18 +65,18 @@ form.setAttribute('method', 'POST');
 form.setAttribute('enctype', 'multipart/form-data');
 form.setAttribute('action', window.location);
 
-//myvar = document.createElement('input');
-//myvar.setAttribute('name', 'editor');
-//myvar.setAttribute('type', 'hidden');
-//myvar.setAttribute('value', a);
+myvar = document.createElement('input');
+myvar.setAttribute('name', 'editor');
+myvar.setAttribute('type', 'hidden');
+myvar.setAttribute('value', a);
 
-//form.appendChild(myvar);
-//document.body.appendChild(form);
+form.appendChild(myvar);
+document.body.appendChild(form);
 //form.submit();   
 
 //window.alert (a);
 
-fetch (window.location, {method: "PUT", body: JSON.stringify (a), headers: {"Content-type": "application/json; charset=UTF-8"}})
+fetch (window.location, {method: "POST", body: JSON.stringify (a)})
 .then(res => res.text()) 
 .then(res => window.alert(res))
 
