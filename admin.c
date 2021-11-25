@@ -436,7 +436,7 @@ buffcatf(&out, "<input type=\"button\" class=\"button\" value=\"Multiple Upload\
 
 buffcatf (&out, "<div id=\"uploader\">\n");
 buffcatf (&out, "<form enctype=\"multipart/form-data\" action=\"%s\" method=\"post\">\n", request.uri);
-buffcatf (&out, "<input type=\"file\" class=\"button\" name=\"myFile\">\n");
+buffcatf (&out, "<input type=\"file\" class=\"button\" name=\"myFile\">\nM");
 buffcatf (&out, "<input type=\"submit\" class=\"button\"  value=\"upload\">\n</form>\n");
 buffcatf (&out, "</div>\n");
 
@@ -470,7 +470,7 @@ if (ep->d_type == 8)
 if (args.showaction > 0)	
 (request.uri[strlen (request.uri) - 1] == '/')?
 buffcatf (&out, "<a href=\"/action%s%s\">%s</a><br>\n", request.path, ep->d_name, ep->d_name):
-buffcatf (&out, "<a href=\"/action%s/%s\">%s</a><br>\n", request.path, ep->d_name, ep->d_name);
+buffcatf (&out, "<a href=y\"/action%s/%s\">%s</a><br>\n", request.path, ep->d_name, ep->d_name);
 
 
 if (args.showaction == 0)	
@@ -677,42 +677,15 @@ request.content_len = atol (temp);
 
 if (request.mode == edit)
 {
-request.localfd = open (request.fullpath, O_WRONLY | O_TRUNC | O_CREAT, S_IRUSR | S_IWUSR);
-if (request.localfd == -1)
-{loggingf ("error opening local file, 688"); exit (0);}
-
-d1 = getnext (inbuff.p, (int) '\"', d1, inbuff.len);
-if (d1 ==-1)
-{loggingf ("data not started in 1st xmission, returning\n");return request;}
-
-loggingf ("data started in 1st xmission\n");
-
-request.procint = 1;
-struct string_data out;
-struct buffer_data in;
-char inn[string_sz];
-in.p = inn;
-in.max = string_sz;
-in.len = 0;
-
-int single = 0;
-if (inbuff.p[inbuff.len-1] == '\"')
-{loggingf ("single xmission detected, adjusting\n"); single = 1;}
-
-in.len = midstr (inbuff.p, in.p, d1, inbuff.len);
-
-parse_json (&in, &out);
-
-request.progress = in.len;
-
-write (request.localfd, out.p, out.len - single);
-
-// detecting if it started, but not finished here
-if (single)
-{close (request.localfd); request.procint = 2;}
+request.procint = getnext (inbuff.p, (int) '\"', d1, inbuff.len);
 return request;
-//loggingf ("first xmission check exit(0)\n");
 } // if edit
+
+if (request.mode == file)
+{
+    
+    
+}
 
 // content len
 // boundary
@@ -811,81 +784,92 @@ sock_buffwrite (request.fd, &outbuff);
 return 4;
 } // get_edit_file
 
-void parse_json (const struct buffer_data *src, struct string_data *dest)
-{
-dest->len = 0;
-for (int i = 0; i < src->len; ++i)
-{
-if (src->p[i] == '\\')
-{
-if (src->p[i+1] == 'n')
-	dest->p[dest->len] = 10;
-
-if (src->p[i+1] == '\\')
-	dest->p[dest->len] = '\\';
-
-if (src->p[i+1] == '\"')
-	dest->p[dest->len] = '\"';
-
-if (src->p[i+1] == '\'')
-	dest->p[dest->len] = '\'';
-
-++i;
-++dest->len;
-continue;
-} // if
-dest->p[dest->len] = src->p[i];
-++dest->len;
-} // for
-
-}// parse json
-
 int put_edit (const struct request_data request)
 {
 loggingf ("put edit commence\n");
 
-if (request.procint == 2)
-	return 1;
 
-struct string_data filedata;
-filedata.len = 0;
 struct buffer_data inbuff;
 char inb [string_sz];
 inbuff.max = string_sz;
 inbuff.p = inb;
 
-int startdata = request.procint;
-int progress = request.progress;
-int enddata = 0;
-//int localfd = open ("putter_test.txt", O_WRONLY | O_TRUNC | O_CREAT, S_IRUSR | S_IWUSR);
+struct buffer_data filedata;
+char fd [maxbuffer];
+filedata.max = maxbuffer;
+filedata.p = fd;
+filedata.len = 0;
 
-//write (localfd, filedata.p, filedata.len);
-while (!enddata)
+struct buffer_data json;
+char js [maxbuffer];
+json.max = maxbuffer;
+json.p = js;
+json.len = 0;
+
+int progress = 0;
+
+if (request.procint)
 {
-	inbuff.len = sock_read (request.fd, inbuff.p, inbuff.max);
-if (inbuff.len == -1)
-{ loggingf ("timeout while reading:\n"); break; }
+loggingf ("data started in first xmission\n");
+memcpy (json.p, request.mainbuff->p + request.procint, request.mainbuff->len - request.procint);
+json.len = request.mainbuff->len - request.procint;
+progress = json.len;
+} //if
+
+while (progress < request.content_len)
+{
+inbuff.len = sock_read (request.fd, inbuff.p, inbuff.max);
+if (inbuff.len ==-1)
+{loggingf ("read timeout, 823\n"); break;}
+
+memcpy (json.p + json.len, inbuff.p, inbuff.len);
 progress += inbuff.len;
-printf ("%c, progress: %d, len: %ld\n", inbuff.p[inbuff.len -1], progress, request.content_len);
+json.len += inbuff.len;
+printf ("cat json: %d of %ld\n", progress, request.content_len);
+} // while cat json
 
-//if (inbuff.p[inbuff.len-1] == '\"')
-if (progress == request.content_len)
-{printf ("enddata found, adjusting\n"); --inbuff.len; enddata = 1;};
+loggingf ("finished cat json\n");
 
-if (startdata == 0 && inbuff.p[0] == '\"')
+
+for (int i = 0; i < json.len; ++i)
 {
-loggingf ("data not startted but successfully detected in 2nd xmission");
-memmove (inbuff.p, inbuff.p + 1, inbuff.len - 1);
+if (json.p[i] == '\\')
+{
+if (json.p[i+1] == 'n')
+	filedata.p[filedata.len] = 10;
 
-}
-//write (localfd, inbuff.p, inbuff.len);
-parse_json (&inbuff, &filedata);
-write (request.localfd, filedata.p, filedata.len);
-startdata = 1;
-}
+else if (json.p[i+1] == '\\')
+	filedata.p[filedata.len] = '\\';
+
+else if (json.p[i+1] == '\"')
+	filedata.p[filedata.len] = '\"';
+
+else if (json.p[i+1] == '\'')
+	filedata.p[filedata.len] = '\'';
+
+else if (json.p[i+1] == 't')
+	filedata.p[filedata.len] = 9;
+else
+loggingf ("missing escape sequence\n");
+	//{loggingf ("the missing escape is: %d (%c)\n", src->p[i+1], src->p[i+1]);
+//dest->p[dest->len] = '^';}
+
+++i;
+++filedata.len;
+continue;
+} // if
+filedata.p[filedata.len] = json.p[i];
+++filedata.len;
+} // for
+
+
+
+int localfd = open (request.fullpath, O_WRONLY | O_TRUNC| O_CREAT, S_IRUSR | S_IWUSR);
+write (localfd, filedata.p + 1, filedata.len - 2);
+close (localfd);
 
 send_txt (request.fd, "it worked");
-close (request.localfd);
+return 1;
 } //put edit
 
 int get_config (const struct args_data args, const struct request_data request)

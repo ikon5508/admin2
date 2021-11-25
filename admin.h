@@ -44,16 +44,14 @@ const struct buffer_data *mainbuff;
 char method;
 int fd;
 
-int localfd;
 int procint;
 long content_len;
-int progress;
+
 enum emode
 {err, action, file, edit, upload, config, root, favicon, websock} mode;
 };
 
 
-void parse_json (const struct buffer_data *src, struct string_data *dest);
 int servico (const int fd);
 void softclose (const int fd, struct buffer_data *inbuff);
 int send_err (const int fd, const int code);
