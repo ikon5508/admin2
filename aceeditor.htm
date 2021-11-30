@@ -8,7 +8,9 @@
     body {
         overflow: hidden;
 font-family: Arial, Helvetica, sans-serif;
-}
+background-color: black;
+        
+    }
 .button {
     padding-left:20px;
   padding-right:20px;
@@ -127,6 +129,19 @@ function fntsz (evt) {
     document.getElementById('editor').style.fontSize=(ssz);
 }
 
+function ro () {
+var ab = document.getElementById ("cb");
+    
+if (ab.checked == true)
+editor.setReadOnly (true);
+        
+if (ab.checked == false)
+editor.setReadOnly (false);
+  
+    
+    
+}
+
 </script>
 
 <div id="editor">DELIMETER</div>
@@ -166,6 +181,8 @@ function fntsz (evt) {
 <option>ambiance</option>
 </select>
 <select class="button" onchange="fntsz(event)">
+    <option>8</option>
+    <option>10</option>
     <option>12</option>
     <option>14</option>
     <option>16</option>
@@ -173,10 +190,17 @@ function fntsz (evt) {
     <option>20</option>
     <option>22</option>
     <option>24</option>
+    <option>26</option>
+    <option>28</option>
+    <option>32</option>
+    <option>34</option>
+   
+    
 </select>
 <input type="button" class="button" value="cut" onclick="cut()">
 <input type="button" class="button" value="copy" onclick="copy()">
 <input type="button" class="button" value="paste" onclick="paste()">
+<input type="checkbox" id="cb" onclick="ro()">
 </div>
 <script src="/file/ace-builds/src-noconflict/ace.js" type="text/javascript" charset="utf-8"></script>
 <script>

@@ -1,4 +1,3 @@
-#include <string.h>
 #include <stdlib.h>
 #include <stdarg.h>
 #include <stdio.h>
@@ -15,6 +14,7 @@
 #include <string.h>
 #include <time.h>
 
+#define sendfileunit 500
 #define maxbuffer 100000
 #define nameholder 100
 #define string_sz 1000
@@ -47,6 +47,8 @@ int sock_setnonblock (const int fd);
 int sock_writeold (const int connfd, const char *buffer, const int size);
 int sock_read (const int connfd, char *buffer, int size);
 int sock_write (const int connfd, char *out, const int len);
+
+int sendfileM (const char *path, const int fd);
 int sendfile (const char *path, const int fd);
 int sendfileold (const char *path, const int fd);
 int init_sockbackdoor (const char *init);

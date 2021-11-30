@@ -46,12 +46,17 @@ int fd;
 
 int procint;
 long content_len;
+char *procpnt;
+
+char user_agent [200];
+char code [100];
+int codelen;
 
 enum emode
 {err, action, file, edit, upload, config, root, favicon, websock} mode;
 };
 
-
+void safe_fname (const struct request_data request, const char *fname, char *rtn);
 int servico (const int fd);
 void softclose (const int fd, struct buffer_data *inbuff);
 int send_err (const int fd, const int code);

@@ -282,7 +282,7 @@ close (locfd);
 return 1;
 } // sendfileold
 
-int sendfile (const char *path, const int fd)
+int sendfileM (const char *path, const int fd)
 {
 int locfd = open (path, O_RDONLY);
 if (locfd < -1)
@@ -331,6 +331,58 @@ if (interim_progress == -1)
 } // while loop
 close (locfd);
 return 1;
+} // sendfileM
+
+int sendfile (const char *path, const int fd)
+{
+int locfd = open (path, O_RDONLY);
+if (locfd < -1)
+    return -1;
+
+struct stat finfo;
+fstat (locfd, &finfo);
+
+size_t read_progress = 0;
+
+size_t write_progress = 0;
+
+size_t fsize = finfo.st_size;
+//loggingf (200, "file size: %d\n", fsize);
+
+char c_fbuffer [sendfileunit];
+struct buffer_data fbuff;
+fbuff.p = c_fbuffer;
+fbuff.max = sendfileunit;
+
+
+while (read_progress < fsize)
+{  
+fbuff.len = read (locfd, fbuff.p, fbuff.max);
+read_progress += fbuff.len;
+
+int interim_progress = sock_writeold (fd, fbuff.p, fbuff.len);
+if (interim_progress == -1)
+	return -1;
+
+int cpylen = interim_progress;
+while (cpylen < fbuff.len)
+{
+	//int cpylen = fbuff.len - interim_progress;
+//for (int i = interim_progress; i < fbuff.len; ++i)
+//fbuff.p [i - interim_progress] = fbuff.p [i];
+//fbuff.p += interim_progress; // doesnt work
+//memmove (fbuff.p, fbuff.p + interim_progress, cpylen);
+//fbuff.len = cpylen;
+
+interim_progress = sock_writeold (fd, fbuff.p + cpylen, fbuff.len - cpylen);
+if (interim_progress == -1)
+	return -1;
+cpylen += interim_progress;
+} // while
+
+} // while loop
+close (locfd);
+return 1;
 } // sendfile
 
 
@@ -363,6 +415,8 @@ memset(&address, 0, sizeof (address));
 
 address.sin_family = AF_INET;
 address.sin_addr.s_addr = INADDR_ANY;
+//address.sin_addr.s_addr = ("192.168.1.121");
+
 address.sin_port = htons( PORT );
 //memset(address.sin_zero, 0, sizeof address.sin_zero);
 
@@ -408,7 +462,7 @@ while (len < 0)
 len = write (connfd, buffer, size);
 if (len == -1)
 {
-usleep (1000);
+usleep (100000);
 time_t deadtime;
 time (&deadtime);
 deadtime -= basetime;

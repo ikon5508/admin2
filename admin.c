@@ -15,40 +15,31 @@ out.p = outb;
 out.len = 0;
 out.max = maxbuffer;
 
-char fname [200];
-char ext [10];
-
-int d1 = getlast (request.path, (int) '.', strlen (request.path));
-strncpy (ext, request.path + d1, strlen (request.path));
-
-d1 = getlast (request.path, (int) '/', strlen (request.path));
-strncpy (fname, request.path + d1 + 1, strlen (request.path) - d1);
-
 int showedit = 0;
 enum eviewtype
 {none, txt, img} viewtype;
 
-if (strcmp(ext, ".txt") == 0)
+if (strcmp(request.ext, ".txt") == 0)
 		viewtype = txt;
-if (strcmp(ext, ".c") == 0)
-		viewtype = txt;
-
-if (strcmp(ext, ".h") == 0)
+if (strcmp(request.ext, ".c") == 0)
 		viewtype = txt;
 
-if (strcmp(ext, ".htm") == 0)
+if (strcmp(request.ext, ".h") == 0)
 		viewtype = txt;
 
-if (strcmp(ext, ".html") == 0)
+if (strcmp(request.ext, ".htm") == 0)
 		viewtype = txt;
 
-if (strcmp(ext, ".jpg") == 0)
+if (strcmp(request.ext, ".html") == 0)
+		viewtype = txt;
+
+if (strcmp(request.ext, ".jpg") == 0)
 		viewtype = img;
 
-if (strcmp(ext, ".jpeg") == 0)
+if (strcmp(request.ext, ".jpeg") == 0)
 		viewtype = img;
 
-if (strcmp(ext, ".png") == 0)
+if (strcmp(request.ext, ".png") == 0)
 		viewtype = img;
 
 if (viewtype == txt)
@@ -66,7 +57,7 @@ buffcatf (&out, ".button {\npadding-left:20px;\npadding-right:20px;\nfont-size:1
 buffcatf (&out, "</style>\n</head>\n<body>\n");
 
 buffcatf (&out, "<script>\n");
-buffcatf (&out, "let fname = \"%s\";\n", fname);
+buffcatf (&out, "let fname = \"%s\";\n", request.resourcename);
 
 buffcatf (&out, "function postdata (action, data) {\n");
 
@@ -90,7 +81,7 @@ buffcatf (&out, "form.submit();\n}\n");
 
 buffcatf (&out, "function frename () {\n");
 //buffcatf (&out, "window.alert (action);\n}\n");
-buffcatf(&out, "var newfname = prompt (\"New File Name:\", \"%s\");\n", fname);
+buffcatf(&out, "var newfname = prompt (\"New File Name:\", \"%s\");\n", request.resourcename);
 
 buffcatf (&out, "if (newfname == null) return;\n");
 
@@ -99,7 +90,7 @@ buffcatf (&out, "window.alert (newfname); \npostdata (\'rename\', newfname);\n}\
 
 buffcatf (&out, "</script>\n");
 
-buffcatf (&out, "%s<br>\n", fname);
+buffcatf (&out, "%s<br>\n", request.resourcename);
 
 buffcatf (&out, "<a href=\"/file%s\">View File</a><br>\n", request.path);
 if (showedit)
@@ -307,6 +298,13 @@ loggingf ("waiting\n");
 
 int connfd = accept(servfd, (struct sockaddr *)&address, (socklen_t*)&addrlen);
 sock_setnonblock (connfd);
+
+char str[INET_ADDRSTRLEN];
+  inet_ntop(address.sin_family, &address.sin_addr, str, INET_ADDRSTRLEN);
+printf("new connection from %s:%d\n", str, ntohs(address.sin_port));
+
+
+
 //int set = 1; setsockopt(connfd, SOL_SOCKET, SO_NOSIGPIPE, (void *)&set, sizeof(int));
 // keep alive loop
 int kacount = 1;
@@ -323,8 +321,8 @@ if (inbuff.len == -1)
 request = process_request (connfd, args, inbuff);
 request.mainbuff = &inbuff;
 
-if (request.procint == -1)
-	exit (0);
+//if (request.procint == -1)
+//	exit (0);
 
 //loggingf ("the god damned motherfucking method is: %c!!!!!!!!!!!\n", request.method);
 
@@ -345,8 +343,8 @@ if (request.method == 'E' && request.mode == config)
     procint = get_config (args, request);
 
 if (request.method == 'E' && request.mode == file)
-    procint = get_file (args, request);
-
+             procint = get_file (args, request);
+             
 if (request.method == 'E' && request.mode == action)
     procint = get_action (args, request);
 
@@ -361,6 +359,8 @@ if (request.method == 'U' && request.mode == edit)
 
 if (request.method == 'O' && request.mode == file)
 	procint = put_file (request);
+if (request.method == 'U' && request.mode == file)
+	procint = put_file (request);
 
 if (request.mode == favicon)
 	servico (connfd);
@@ -371,7 +371,10 @@ if (procint > 1)
 //if (procint == 1)
 	--kacount;
 
-if (procint == -1 || kacount == 0)
+if (procint == -1)
+{close (connfd); break;}
+
+if (kacount == 0)
 { softclose (connfd, &inbuff); break;}
 
 } // keep alive loop
@@ -404,7 +407,7 @@ buffcatf (&out, "<script>");
 buffcatf (&out, "function get_multi () { \n");
 
 buffcatf (&out, "var count = window.prompt (\"How Many\", 2);\n");
-buffcatf (&out, "var content = \"<form enctype=\'multipart/form-data\' action=\'%s\' method=\'PUT\'>\";\n", request.uri);
+buffcatf (&out, "var content = \"<form enctype=\'multipart/form-data\' action=\'%s\' method=\'post\'>\";\n", request.uri);
 buffcatf (&out, "var i;\n");
 buffcatf (&out, "for (i= 0; i < count; ++i)\n");
 buffcatf (&out, "content += \"<input type=\'file\' class=\'button\' name=\'myFile\'>\";\n");
@@ -436,7 +439,7 @@ buffcatf(&out, "<input type=\"button\" class=\"button\" value=\"Multiple Upload\
 
 buffcatf (&out, "<div id=\"uploader\">\n");
 buffcatf (&out, "<form enctype=\"multipart/form-data\" action=\"%s\" method=\"post\">\n", request.uri);
-buffcatf (&out, "<input type=\"file\" class=\"button\" name=\"myFile\">\nM");
+buffcatf (&out, "<input type=\"file\" class=\"button\" name=\"myFile\">\n");
 buffcatf (&out, "<input type=\"submit\" class=\"button\"  value=\"upload\">\n</form>\n");
 buffcatf (&out, "</div>\n");
 
@@ -470,7 +473,7 @@ if (ep->d_type == 8)
 if (args.showaction > 0)	
 (request.uri[strlen (request.uri) - 1] == '/')?
 buffcatf (&out, "<a href=\"/action%s%s\">%s</a><br>\n", request.path, ep->d_name, ep->d_name):
-buffcatf (&out, "<a href=y\"/action%s/%s\">%s</a><br>\n", request.path, ep->d_name, ep->d_name);
+buffcatf (&out, "<a href=\"/action%s/%s\">%s</a><br>\n", request.path, ep->d_name, ep->d_name);
 
 
 if (args.showaction == 0)	
@@ -487,7 +490,7 @@ buffcatf (&out, "<a href=\"/file%s/%s\">%s</a><br>\n", request.path, ep->d_name,
 
 buffcatf (&out, "</body>\n</html>");
 // save page
-//save_buffer (out, "dir.htm");
+save_buffer (out, "dir.htm");
 //savepage
 loggingf ("%d: bytes directory info\n", out.len);
 struct string_data head;
@@ -561,8 +564,8 @@ loggingf ("%d bytes: %s", size, mime_txt);
 
 sock_writeold (request.fd, outbuff.p, outbuff.len);
 
-sendfileold (request.fullpath, request.fd);
-return 1;
+return sendfile (request.fullpath, request.fd);
+//return 1;
 
 } // serv_file`
 
@@ -596,6 +599,7 @@ request.fd = fd;
 int d1 = getnext (inbuff.p, 32, 0, inbuff.len);
 ++d1;
 int d2 = getnext (inbuff.p, 32, d1, inbuff.len);
+int rear = d2;
 
 //strlen (request.uri) = midstr (inbuff.p, request.uri, d1, d2);
 int procint = d2 - d1;
@@ -660,32 +664,44 @@ sprintf (request.fullpath, "%s%s", args.base_path, request.path);
 if (request.method == 'E')
 	return (request);
 
-
-d1 = search (inbuff.p, "ength: ", d2, inbuff.len);
-if (d1 ==-1) {send_txt (fd, "error ength: "); request.procint = -1; return request;}
-d2 = getnext (inbuff.p, 10, d1, inbuff.len);
-if (d2 ==-1) {send_txt (fd, "error end (10)"); request.procint = -1; return request;}
 char temp [100] = "";
 
+d1 = search (inbuff.p, "ength: ", rear, inbuff.len);
+if (d1 ==-1) {send_txt (fd, "error ength: "); request.procint = -1; return request;}
+d2 = getnext (inbuff.p, 10, d1, inbuff.len);
+if (d2 ==-1) {send_txt (fd, "error end (669)"); request.procint = -1; return request;}
 midstr (inbuff.p, temp, d1, d2);
 rtrim (temp);
-
-//send_ftxt (fd, "length: |%s|", temp);
-
-//exit (0);
 request.content_len = atol (temp);
+
+d1 = search (inbuff.p, "gent: ", rear, inbuff.len);
+if (d1 ==-1) {send_txt (fd, "error gent: "); request.procint = -1; return request;}
+d2 = getnext (inbuff.p, 10, d1, inbuff.len);
+if (d2 ==-1) {send_txt (fd, "error end (677)"); request.procint = -1; return request;}
+midstr (inbuff.p, request.user_agent, d1, d2);
 
 if (request.mode == edit)
 {
-request.procint = getnext (inbuff.p, (int) '\"', d1, inbuff.len);
+request.procint = getnext (inbuff.p, (int) '\"', rear, inbuff.len);
 return request;
 } // if edit
 
 if (request.mode == file)
 {
-    
-    
-}
+loggingf ("put file processed in proc\n");
+d1 = search (inbuff.p, "boundary=", rear, inbuff.len);
+if (d1 ==-1) {loggingf ("error boundary: "); request.procint = -1; return request;}
+d2 = getnext (inbuff.p, 10, d1, inbuff.len);
+if (d2 ==-1) {loggingf ("error end (694)"); request.procint = -1; return request;}
+midstr (inbuff.p, request.code, d1, d2);
+request.codelen = rtrim (request.code);
+
+//request.procint = search (inbuff.p, request.code, d2, inbuff.len);
+request.procpnt = strstr (inbuff.p + d2, request.code);
+
+//printf ("code: %s, procint: %d\n", request.code, request.procint);
+return request;
+} // if file
 
 // content len
 // boundary
@@ -808,24 +824,25 @@ json.len = 0;
 
 int progress = 0;
 
-if (request.procint)
+if (request.procint > 0)
 {
 loggingf ("data started in first xmission\n");
 memcpy (json.p, request.mainbuff->p + request.procint, request.mainbuff->len - request.procint);
 json.len = request.mainbuff->len - request.procint;
 progress = json.len;
+}else{
+loggingf ("data not started in first xmission\n");
 } //if
 
 while (progress < request.content_len)
 {
 inbuff.len = sock_read (request.fd, inbuff.p, inbuff.max);
 if (inbuff.len ==-1)
-{loggingf ("read timeout, 823\n"); break;}
+{loggingf ("read timeout, 839\n"); break;}
 
 memcpy (json.p + json.len, inbuff.p, inbuff.len);
 progress += inbuff.len;
 json.len += inbuff.len;
-printf ("cat json: %d of %ld\n", progress, request.content_len);
 } // while cat json
 
 loggingf ("finished cat json\n");
@@ -916,11 +933,165 @@ sendfile ("favicon.ico", fd);
 return 1;
 } // servico
 
-int put_file (const struct request_data request)
+void safe_fname (const struct request_data request, const char *fname, char *rtn)
+{
+  sprintf (rtn, "%s/%s", request.fullpath, fname);
+  struct stat finfo;
+  int check = stat (rtn, &finfo);
+  if (check != 0) return;
+
+ int copynum = 1;
+ while (check == 0)
+ {
+    sprintf (rtn, "%s/%d-%s",request.fullpath, copynum, fname);  
+      check = stat (rtn, &finfo);
+
+      ++copynum;
+ }// while
+}// safe_fname
+
+void process_multifile (int *localfd, const long read_progress, const struct request_data request, struct buffer_data *filedata, const struct buffer_data inbuff)
+{
+const int safename = 1;
+
+int d1 = 0, d2 = 0;
+char fname [nameholder];
+char fullpath [string_sz] = "";
+int startdata, enddata, writelen;
+int noend = 0, offset = 0;
+
+char *p1, *p2;
+while (1)
+{
+if (*localfd == -1) 
+{
+p1 = strstr (filedata->p + offset, "filename=\"");
+if (p1 == NULL) {loggingf ("no starting delim found 969\n"); break;}
+d1 = p1 - filedata->p + 10;
+
+p2 = strchr (filedata->p + d1 + 2, (int) '\"');
+d2 = p2 - filedata->p;
+
+int cpylen = d2 - d1;
+memset (fname, 0, nameholder);
+memcpy (fname, filedata->p + d1, cpylen);
+
+//printf ("copylen: %d fname: %s\n",cpylen, fname);
+    
+if (safename) safe_fname (request, fname, fullpath);
+else sprintf (fullpath, "%s/%s", request.fullpath, fname);
+
+*localfd = open (fullpath, O_WRONLY | O_TRUNC| O_CREAT, S_IRUSR | S_IWUSR);
+if (*localfd == -1)
+    {loggingf ("error opening local file\n"); exit (0);}
+
+}// if no file open
+p1 = strchr (filedata->p + d2 + 4, 10);
+startdata = p1 - filedata->p;
+
+while (filedata->p[startdata] == 13 || filedata->p[startdata] == 10)
+++startdata;
+
+p1 = strstr (filedata->p + d2, request.code);
+if (p1 == NULL)
 {
 
+enddata = filedata->len - 200; //noend = 1;
+filedata->len = 200;
+writelen = enddata - startdata +1;
 
-} //post file
+write (*localfd, filedata->p + startdata, writelen);
+
+loggingf ("no rboundary found, returning");
+
+memmove (filedata->p, filedata->p + enddata, filedata->len);
+
+return ;
+
+} // more logic here for long xmission no rbound found
+else
+{
+enddata = p1 - filedata->p -3;
+while (filedata->p[enddata] == 13 || filedata->p[enddata] == 10)
+--enddata;
+ ++enddata;   
+writelen = enddata - startdata +1;
+
+write (*localfd, filedata->p + startdata, writelen);
+close (*localfd);
+*localfd = -1;
+
+offset = enddata + request.codelen;
+    
+} /// if enddata adjustment (found rboundary)
+
+} // grand loop
+
+} // process_multifile
+
+int put_file (const struct request_data request)
+{
+loggingf ("put_file commence\n");
+const int safename = 1;
+
+struct buffer_data filedata;
+char fd [maxbuffer];
+filedata.p = fd;
+filedata.len = 0;
+filedata.max = maxbuffer;
+
+struct buffer_data inbuff;
+char in [string_sz];
+inbuff.p = in;
+inbuff.len = 0;
+inbuff.max = string_sz;
+
+
+
+long read_progress = 0;
+int localfd = -1;
+
+if (request.procpnt != NULL)
+{
+loggingf ("data started in first xmission\n");
+
+//filedata.len = midstr (request.mainbuff->p, filedata.p, request.procint, request.mainbuff->len);
+int d1 = request.procpnt - request.mainbuff->p;
+filedata.len = request.mainbuff->len - d1;
+memcpy (filedata.p, request.procpnt, filedata.len);
+
+read_progress = filedata.len + 2;
+
+//printf ("save data\read progress: %ld, content_len: %ld\n", read_progress, request.content_len);
+
+//    exit (0);
+} // if data started in first xmission
+
+while (read_progress < request.content_len)
+{
+inbuff.len = sock_read (request.fd, inbuff.p, inbuff.max);
+read_progress += inbuff.len;
+
+//printf ("buff len: %d read progress: %ld, content_len: %ld\n", filedata.len, read_progress, request.content_len);
+
+// buffer overflow protection
+if ((filedata.len + inbuff.len) > filedata.max)
+    process_multifile (&localfd, read_progress, request, &filedata, inbuff);
+    
+memcpy (filedata.p + filedata.len, inbuff.p, inbuff.len);
+filedata.len += inbuff.len;
+
+} // while read loop
+
+//process data
+
+process_multifile (&localfd, read_progress, request, &filedata, inbuff);
+
+send_txt (request.fd, "check");
+//exit (0);
+    return 1;
+} 
+
 
 void softclose (const int fd, struct buffer_data *inbuff)
 {
