@@ -14,12 +14,13 @@ if (fd < 0)
 	return 0;
 	
 int mrun = atoi (argv [1]);
+//char rstr [100];
 
 for (int i = 0; i < mrun; ++i)
 {
 char temp [1000];
 
-int len = sprintf (temp, "%d, this is a test file, %d\n", i, i);
+int len = sprintf (temp, "%d, %s, %d\n", i, argv[2],  i);
 
 write (fd, temp, len);
 
