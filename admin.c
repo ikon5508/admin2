@@ -1189,6 +1189,55 @@ if (inbuff.len ==-1){loggingf ("client timed out\n"); return -1;}
 read_progress += inbuff.len;
 printf ("read progress: %ld / %ld\n", read_progress, request.content_len);
 
+if (fdata.len ==-1)
+{
+d1 = search (inbuff.p, "name=\"fsize\"", 0, inbuff.len);
+if (d1==-1) {printf ("error locating fdata 1195"); exit (0);}
+d1 += 3;
+
+d2 = getnext (inbuff.p, '\n', d1 +1, inbuff.len);
+if (d2==-1) {printf ("error locating fdata end 1199"); exit (0);}
+
+printf ("d1: %d, d2: %d\n", d1, d2);
+
+midstr (inbuff.p, fdata.p, d1, d2);
+
+ftrim (fdata.p);
+fdata.len = rtrim (fdata.p);
+
+fdata.procint = getnext (fdata.p, ':', 0, fdata.len);
+
+midstr (fdata.p, temp1, 0, fdata.procint);
+
+filecount = atoi (temp1);
+
+d1 = search (inbuff.p, "filename=\"", d2, inbuff.len);
+if (d1==-1) {loggingf ("no filename: 1217\n"); continue;}
+d2 = getnext (inbuff.p, '\"', d1 + 1, inbuff.len);
+
+midstr (inbuff.p, temp1, d1, d2);
+
+if (safename) safe_fname (request, temp1, fullpath);
+else sprintf (fullpath, "%s/%s", request.fullpath, temp1);
+
+localfd = open (fullpath, O_WRONLY | O_TRUNC| O_CREAT, S_IRUSR | S_IWUSR);
+	if (localfd ==-1) {loggingf ("error 1225\n"); exit(0);}
+
+fsize = get_nextsize (&fdata);
+filenum = 1;
+startdata = getnext (inbuff.p, '\n', d2 + 3, inbuff.len);
+startdata += 3;
+
+write (localfd, inbuff.p + startdata, inbuff.len - startdata);
+file_progress = inbuff.len - startdata;
+// does not account for small files < 1k
+continue;
+} // if no fdata, process and open file
+
+
+if (localfd ==-1) 
+{loggingf ("file not opened, additional logic required\n"); exit (0);}
+
 
 if (localfd > 0)
 {
@@ -1208,7 +1257,7 @@ if (filenum == filecount)
 {loggingf ("all files recieved"); break;}
 
 d1 = search (inbuff.p, "filename=\"", d2, inbuff.len);
-if (d1==-1){printf ("error: 1208\n"); exit (0); }
+if (d1==-1){printf ("error: 1208\n"); continue; }
 d2 = getnext (inbuff.p, '\"', d1 + 1, inbuff.len);
 if (d2==-1) {printf ("error: 1210\n"); exit (0); }
 
@@ -1241,7 +1290,7 @@ file_progress = strtmp.len;
 
 send_txt (request.fd, "all done");
 
-
+return 1;
 
 } // put_file
 
