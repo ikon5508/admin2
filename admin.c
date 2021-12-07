@@ -7,6 +7,10 @@
 #include <openssl/evp.h>
 #include <openssl/buffer.h>
 #include <stdint.h>
+
+int sandbox_mode = 0;
+char sbval [nameholder];
+
 int get_action (const struct args_data args, const struct request_data request)
 {
     char outb [maxbuffer];
@@ -102,20 +106,62 @@ buffcatf (&out, "<input type=\"button\" class=\"button\" value=\"Move\" onclick=
 buffcatf (&out, "<input type=\"button\" class=\"button\" value=\"Delete\" onclick=\"fdelete()\"><br>\n");
 
 if (viewtype == img)
-	buffcatf (&out, "<img src=\"/file%s\"></img>", request.path);
+	buffcatf (&out, "<img src=\"/file%s\" width=\"600px\" height=\"auto\"></img>", request.path);
 
 if (viewtype == txt)
 {
+    loggingf ("generating text preview\n");
 int localfd = open (request.fullpath, O_RDONLY);
 if (localfd == -1)
 	goto skip;
 
-struct string_data txtdata;
+//struct string_data txtdata;
+struct buffer_data in;
+char indata [maxbuffer];
+char outdata [maxbuffer];
+struct buffer_data pout;
+in.p = indata;
+pout.p = outdata;
+pout.len = 0;
 
-txtdata.len = read (localfd, txtdata.p, string_sz);
+in.len = read (localfd, in.p, maxbuffer);
 close (localfd);
 
-buffcatf (&out, "%.*s", txtdata.len, txtdata.p);
+for (int i = 0; i < in.len; ++i)
+{
+if (pout.len > maxbuffer - 8)
+break;
+
+if (in.p[i] == '\n')
+{
+int l = strlen ("<br>\n");
+memcpy (pout.p + pout.len, "<br>\n", l);
+pout.len += l;
+continue;
+}
+
+if (in.p[i] == '>')
+{
+int l = strlen (">");
+memcpy (pout.p + pout.len, ">", l);
+pout.len += l;
+continue;
+}
+
+if (in.p[i] == '<')
+{
+int l = strlen ("<");
+memcpy (pout.p + pout.len, "<", l);
+pout.len += l;
+continue;
+}
+
+pout.p[pout.len] = in.p[i];
+++pout.len;
+}
+
+memcpy (out.p + out.len, pout.p, pout.len);
+out.len += pout.len;
 
 skip:;
 } // if text preview
@@ -123,11 +169,9 @@ skip:;
 buffcatf (&out, "</body></html>");
 struct string_data head;
 
-
-
 head.len = sprintf (head.p, "%s%s%s%s%d\n\n", hthead, connka, conthtml, contlen, out.len);
 sock_write (request.fd, head.p, head.len);
-
+save_buffer (out, "actionpage.htm");
 sock_write (request.fd, out.p, out.len);
 return 1;
     
@@ -263,6 +307,50 @@ printf ("len: %d\n", inbuff.len);
 */
 } // websock
 
+long get_nextsize (string *fdata)
+{
+int n = getnext (fdata->p, ':', fdata->procint + 1, fdata->len);
+if (n ==-1) n = fdata->len;
+
+char temp [10];
+
+midstr (fdata->p, temp, fdata->procint + 1, n);
+
+long rtn = atol (temp);
+
+fdata->procint = n;
+
+return rtn;
+
+}
+
+void sandbox_client (buffer *inbuff)
+{
+char fullpath [string_sz];
+
+static int frame = 1;
+
+sprintf (fullpath, "sandbox/%s-%d.txt", sbval, frame);
+const int maxcount = 50;
+
+int fd = -1;
+while (fd ==-1)
+{
+if (frame == maxcount) break;
+	
+fd = open (fullpath, O_RDONLY);
+if (fd < 0) { ++frame; continue;}
+
+inbuff->len = read (fd, inbuff->p, string_sz);
+
+close (fd);
+
+++frame;
+break;
+
+} // while
+} // sandbox_client
+
 int main (int argc, char **argv)
 {
 signal(SIGPIPE, SIG_IGN);
@@ -272,26 +360,63 @@ args.showaction = 2;
 // 0 for none, 1 show action page 2 load previewcon action page
 strcpy (args.base_path, ".");
 strcpy (args.editor_path, "aceeditor.htm");
-	
+
+for (int i = 1; i < argc; ++i)
+{
+
+if (!strcmp (argv[i], "-sandbox"))
+{strcpy (sbval, argv[i + 1]);
+sandbox_mode = 1;}
+
+if (!strcmp (argv[i], "-backdoor"))
+init_sockbackdoor (argv[i+1]);
+
+
+
+} // for args
+
 
 init_log ("log.txt");
 
-loggingf ("admin load\nPort: %d\nPath: %s\nEditor: %s\n", args.port, args.base_path, args.editor_path);
-
-    init_sockbackdoor ("bd.txt");
-
-struct sockaddr_in address;
-socklen_t addrlen = sizeof(address);
-
-int servfd = prepsocket (args.port);
-
+if (sandbox_mode)
+{
 char inbuffer [string_sz];
 struct buffer_data inbuff;
 inbuff.p = inbuffer;
 inbuff.max = (string_sz);
 
+sandbox_client (&inbuff);
+struct request_data request = process_request (0, args, inbuff);
+request.mainbuff = &inbuff;
+
+put_file (request);
+
+printf ("exiting sandbox\n");
+exit (0);
+} //if sandboxnode
+
+
+
+struct sockaddr_in address;
+socklen_t addrlen = sizeof(address);
+
+int servfd = prepsocket (args.port);
+if (servfd == -1)
+{
+    send_kill(args.port);
+    servfd = prepsocket (args.port);
+}
+
+loggingf ("admin load\nPort: %d\nPath: %s\nEditor: %s\n", args.port, args.base_path, args.editor_path);
+
+
+char inbuffer [string_sz];
+struct buffer_data inbuff;
+inbuff.p = inbuffer;
+inbuff.max = (string_sz);
+int loopctl = 1;
 // main loop
-while (1)
+while (loopctl)
 {
 struct request_data request;
 loggingf ("waiting\n");
@@ -303,9 +428,6 @@ char str[INET_ADDRSTRLEN];
   inet_ntop(address.sin_family, &address.sin_addr, str, INET_ADDRSTRLEN);
 printf("new connection from %s:%d\n", str, ntohs(address.sin_port));
 
-
-
-//int set = 1; setsockopt(connfd, SOL_SOCKET, SO_NOSIGPIPE, (void *)&set, sizeof(int));
 // keep alive loop
 int kacount = 1;
 int procint = 1;
@@ -317,14 +439,13 @@ inbuff.len = sock_read (connfd, inbuff.p, inbuff.max);
 if (inbuff.len == -1)
 { loggingf ("client timed out\n");  close (connfd); break; }
 
+if (!strcmp (inbuff.p, "----kill----"))
+    {loggingf ("kill signal recieved\n"); loopctl = 0; break;}
+
 //inbuff.p[inbuff.len + 1] = 0;
 request = process_request (connfd, args, inbuff);
 request.mainbuff = &inbuff;
 
-//if (request.procint == -1)
-//	exit (0);
-
-//loggingf ("the god damned motherfucking method is: %c!!!!!!!!!!!\n", request.method);
 
 (request.method == 'E')?
 loggingf ("GET: %s\n", request.uri):
@@ -357,9 +478,9 @@ if (request.method == 'O' && request.mode == edit)
 if (request.method == 'U' && request.mode == edit)
 	procint = put_edit (request);
 
-if (request.method == 'O' && request.mode == file)
+if (request.method == 'O' && request.mode == upload)
 	procint = put_file (request);
-if (request.method == 'U' && request.mode == file)
+if (request.method == 'U' && request.mode == upload)
 	procint = put_file (request);
 
 if (request.mode == favicon)
@@ -593,17 +714,16 @@ memset (&request, 0, sizeof (request));
 
 request.method = inbuff.p [1];
 request.fd = fd;
-//request.mainbuff = &inbuff;
-
 
 int d1 = getnext (inbuff.p, 32, 0, inbuff.len);
 ++d1;
 int d2 = getnext (inbuff.p, 32, d1, inbuff.len);
 int rear = d2;
 
-//strlen (request.uri) = midstr (inbuff.p, request.uri, d1, d2);
 int procint = d2 - d1;
-strncpy (request.uri, inbuff.p + d1, d2 - d1);
+if (procint ==-1) exit (0); // catch potential seg fault when kill signal sent
+
+strncpy (request.uri, inbuff.p + d1, procint);
 
 d1 = getlast (request.uri, '/', procint); 
 strncpy (request.resourcename, request.uri + d1 +1, procint - d1 -1);
@@ -686,7 +806,7 @@ request.procint = getnext (inbuff.p, (int) '\"', rear, inbuff.len);
 return request;
 } // if edit
 
-if (request.mode == file)
+if (request.mode == upload)
 {
 loggingf ("put file processed in proc\n");
 d1 = search (inbuff.p, "boundary=", rear, inbuff.len);
@@ -696,9 +816,9 @@ if (d2 ==-1) {loggingf ("error end (694)"); request.procint = -1; return request
 midstr (inbuff.p, request.code, d1, d2);
 request.codelen = rtrim (request.code);
 
-//request.procint = search (inbuff.p, request.code, d2, inbuff.len);
-request.procpnt = strstr (inbuff.p + d2, request.code);
-
+request.procint = search (inbuff.p, request.code, d2, inbuff.len);
+//request.procpnt = strstr (inbuff.p + d2, request.code);
+//request.procint = request.procpnt - inbuff.p;
 //printf ("code: %s, procint: %d\n", request.code, request.procint);
 return request;
 } // if file
@@ -950,95 +1070,13 @@ void safe_fname (const struct request_data request, const char *fname, char *rtn
  }// while
 }// safe_fname
 
-void process_multifile (int *localfd, const long read_progress, const struct request_data request, struct buffer_data *filedata, const struct buffer_data inbuff)
-{
-const int safename = 1;
-
-int d1 = 0, d2 = 0;
-char fname [nameholder];
-char fullpath [string_sz] = "";
-int startdata, enddata, writelen;
-int noend = 0, offset = 0;
-
-char *p1, *p2;
-while (1)
-{
-if (*localfd == -1) 
-{
-p1 = strstr (filedata->p + offset, "filename=\"");
-if (p1 == NULL) {loggingf ("no starting delim found 969\n"); break;}
-d1 = p1 - filedata->p + 10;
-
-p2 = strchr (filedata->p + d1 + 2, (int) '\"');
-d2 = p2 - filedata->p;
-
-int cpylen = d2 - d1;
-memset (fname, 0, nameholder);
-memcpy (fname, filedata->p + d1, cpylen);
-
-//printf ("copylen: %d fname: %s\n",cpylen, fname);
-    
-if (safename) safe_fname (request, fname, fullpath);
-else sprintf (fullpath, "%s/%s", request.fullpath, fname);
-
-*localfd = open (fullpath, O_WRONLY | O_TRUNC| O_CREAT, S_IRUSR | S_IWUSR);
-if (*localfd == -1)
-    {loggingf ("error opening local file\n"); exit (0);}
-
-}// if no file open
-p1 = strchr (filedata->p + d2 + 4, 10);
-startdata = p1 - filedata->p;
-
-while (filedata->p[startdata] == 13 || filedata->p[startdata] == 10)
-++startdata;
-
-p1 = strstr (filedata->p + d2, request.code);
-if (p1 == NULL)
-{
-
-enddata = filedata->len - 200; //noend = 1;
-filedata->len = 200;
-writelen = enddata - startdata +1;
-
-write (*localfd, filedata->p + startdata, writelen);
-
-loggingf ("no rboundary found, returning");
-
-memmove (filedata->p, filedata->p + enddata, filedata->len);
-
-return ;
-
-} // more logic here for long xmission no rbound found
-else
-{
-enddata = p1 - filedata->p -3;
-while (filedata->p[enddata] == 13 || filedata->p[enddata] == 10)
---enddata;
- ++enddata;   
-writelen = enddata - startdata +1;
-
-write (*localfd, filedata->p + startdata, writelen);
-close (*localfd);
-*localfd = -1;
-
-offset = enddata + request.codelen;
-    
-} /// if enddata adjustment (found rboundary)
-
-} // grand loop
-
-} // process_multifile
+//long get_nextsize (fdata)
 
 int put_file (const struct request_data request)
 {
 loggingf ("put_file commence\n");
-const int safename = 1;
 
-struct buffer_data filedata;
-char fd [maxbuffer];
-filedata.p = fd;
-filedata.len = 0;
-filedata.max = maxbuffer;
+const int safename = 1;
 
 struct buffer_data inbuff;
 char in [string_sz];
@@ -1046,52 +1084,166 @@ inbuff.p = in;
 inbuff.len = 0;
 inbuff.max = string_sz;
 
+string fdata;
+fdata.len =-1;
+fdata.procint = 0;
 
+string strtmp;
 
-long read_progress = 0;
+int d1 = 0, d2 = 0;
+char temp1 [nameholder], temp2 [nameholder];
+char fullpath [string_sz];
+int filecount = 0, filenum = 0;
+long fsize = 0, read_progress = 0;
+long file_progress = 0;
+int startdata = 0, enddata = 0;
 int localfd = -1;
 
-if (request.procpnt != NULL)
+if (request.procint > 0)
 {
-loggingf ("data started in first xmission\n");
+read_progress = request.mainbuff->len - request.procint + request.codelen + 2;	
+printf ("data started in first xmission: %ld / %ld\n", read_progress, request.content_len);
+//find second boundary, place into d1
+d1 = search (request.mainbuff->p, request.code, request.procint, request.mainbuff->len);
+   if (d1  ==-1) {loggingf ("error 1091\n"); exit (0);}
 
-//filedata.len = midstr (request.mainbuff->p, filedata.p, request.procint, request.mainbuff->len);
-int d1 = request.procpnt - request.mainbuff->p;
-filedata.len = request.mainbuff->len - d1;
-memcpy (filedata.p, request.procpnt, filedata.len);
+  // find start of datam place into d2
+d2 = getnext(request.mainbuff->p, '\"', request.procint, request.mainbuff->len);
+d2 = getnext(request.mainbuff->p, '\"', d2 +1, request.mainbuff->len);
 
-read_progress = filedata.len + 2;
+midstr (request.mainbuff->p, fdata.p, d2 +1, d1 - request.codelen -2);
+ftrim (fdata.p);
+fdata.len = rtrim (fdata.p);
 
-//printf ("save data\read progress: %ld, content_len: %ld\n", read_progress, request.content_len);
 
-//    exit (0);
-} // if data started in first xmission
+enddata = d1;
+fdata.procint = getnext (fdata.p, ':', 0, fdata.len);
+midstr (fdata.p, temp1, 0, fdata.procint);
+filecount = atoi (temp1);
+
+fsize = get_nextsize (&fdata);
+
+loggingf ("file started in main: enddata: %d, len: %d\n", enddata, request.mainbuff->len);
+if (enddata < request.mainbuff->len)
+{
+loggingf ("additional data started in first xmission\n");
+//d1 = search (request.mainbuff->p, request.code, enddata, request.mainbuff->len);
+//	if (d1==-1) {loggingf ("search error 1118\n"); exit (0);}
+
+d1 = search (request.mainbuff->p, "filename=\"", enddata, request.mainbuff->len);
+	if (d1==-1) {loggingf ("1122, addional logic required, data within next xmission\n"); exit (0);}
+d2 = getnext (request.mainbuff->p, '\"', d1 + 1, request.mainbuff->len);
+	if (d2==-1) {loggingf ("search error 1123\n"); exit (0);}
+
+midstr (request.mainbuff->p, temp1, d1, d2);
+//printf ("fname: %s\n", temp1);
+
+startdata = getnext (request.mainbuff->p, '\n', d2 + 4, request.mainbuff->len);
+	if (startdata ==-1) {loggingf ("error 1130\n"); exit (0);}
+startdata += 3;
+
+if (safename) safe_fname (request, temp1, fullpath);
+else sprintf (fullpath, "%s/%s",request.fullpath, temp1);
+
+localfd = open (fullpath, O_WRONLY | O_TRUNC| O_CREAT, S_IRUSR | S_IWUSR);
+	if (localfd ==-1) {loggingf ("error 1134\n"); exit(0);}
+filenum = 1;
+
+// if fsize smaller than remaining buffer
+d1 = request.mainbuff->len - startdata;
+if (fsize < d1)
+{
+write (localfd, request.mainbuff->p + startdata, fsize);
+close (localfd);
+localfd = -1;
+//loggingf ("first file recieved, check data");
+
+if (filecount == 1)
+{
+loggingf ("all data revieved, check");
+send_txt (request.fd, "all data revieved, check");
+return 1;
+} // if no more files and all data transmitted in single xmission
+
+}else{ // else if fsizebigger than mainbuff
+// if first file spans first and multiple xmission
+enddata = request.mainbuff->len - startdata;
+write (localfd, request.mainbuff->p + startdata, enddata);
+file_progress = enddata;
+} // if file single / multi reciever 
+
+} // if file(s) started aftr fdata
+
+
+//long fsize = get_nextsize (fdata)
+} // if procint > 0
+
+
+// do subsequent reads here
 
 while (read_progress < request.content_len)
 {
 inbuff.len = sock_read (request.fd, inbuff.p, inbuff.max);
+if (inbuff.len ==-1){loggingf ("client timed out\n"); return -1;}
+
 read_progress += inbuff.len;
+printf ("read progress: %ld / %ld\n", read_progress, request.content_len);
 
-//printf ("buff len: %d read progress: %ld, content_len: %ld\n", filedata.len, read_progress, request.content_len);
 
-// buffer overflow protection
-if ((filedata.len + inbuff.len) > filedata.max)
-    process_multifile (&localfd, read_progress, request, &filedata, inbuff);
-    
-memcpy (filedata.p + filedata.len, inbuff.p, inbuff.len);
-filedata.len += inbuff.len;
+if (localfd > 0)
+{
+write (localfd, inbuff.p, inbuff.len);
+file_progress += inbuff.len;
 
-} // while read loop
+if (file_progress > fsize)
+{
+ftruncate (localfd, fsize);
+close (localfd);
+localfd =-1;
 
-//process data
+d1 = file_progress - fsize;
+d2 = inbuff.len - d1;
 
-process_multifile (&localfd, read_progress, request, &filedata, inbuff);
+if (filenum == filecount)
+{loggingf ("all files recieved"); break;}
 
-send_txt (request.fd, "check");
-//exit (0);
-    return 1;
-} 
+d1 = search (inbuff.p, "filename=\"", d2, inbuff.len);
+if (d1==-1){printf ("error: 1208\n"); exit (0); }
+d2 = getnext (inbuff.p, '\"', d1 + 1, inbuff.len);
+if (d2==-1) {printf ("error: 1210\n"); exit (0); }
 
+midstr (inbuff.p, temp1, d1, d2);
+
+if (safename) safe_fname (request, temp1, fullpath);
+else sprintf (fullpath, "%s/%s", request.fullpath, temp1);
+
+localfd = open (fullpath, O_WRONLY | O_TRUNC| O_CREAT, S_IRUSR | S_IWUSR);
+	if (localfd ==-1) {loggingf ("error 1218\n"); exit(0);}
+++filenum;
+fsize = get_nextsize (&fdata);
+
+d1 = getnext (inbuff.p, '\n', d2 + 4, inbuff.len);
+
+strtmp.len = midstr (inbuff.p, strtmp.p, d1 + 3, inbuff.len);
+
+write (localfd, strtmp.p, strtmp.len);
+file_progress = strtmp.len;
+
+
+} // if xmission spans over fsize
+
+
+} //if localfd open
+
+
+} // while
+
+
+send_txt (request.fd, "all done");
+
+
+
+} // put_file
 
 void softclose (const int fd, struct buffer_data *inbuff)
 {
@@ -1136,6 +1288,9 @@ return 1;
 
 int send_txt (const int fd, const char *txt)
 {
+if (sandbox_mode)
+	return 1;
+
 int len = strlen (txt);
 
 char outbuffer [maxbuffer];
@@ -1154,6 +1309,9 @@ return 1;
 
 int send_ftxt (const int fd, const char *format, ...)
 {
+
+if (sandbox_mode)
+	return 1;
 	
 va_list ap;
 

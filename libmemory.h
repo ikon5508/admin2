@@ -13,6 +13,8 @@
 #include <errno.h>
 #include <string.h>
 #include <time.h>
+#include <netdb.h>
+
 
 #define sendfileunit 500
 #define maxbuffer 100000
@@ -27,6 +29,7 @@ int procint;
 int len;
 int max;
 };
+typedef struct buffer_data buffer;
 
 struct string_data
 {
@@ -34,7 +37,9 @@ char p[string_sz];
 int procint;
 int len;
 };
+typedef struct string_data string;
 
+void send_kill (const int port);
 int init_buffer (struct buffer_data *buffer, const int size);
 int getnext (const char *base, const int c, const int offset, const int len);
 int midstr(const char *major, char *minor, int start, const int end);
@@ -62,7 +67,7 @@ int strsearch (const char *hay, const char *needle, const int offset, const int 
 
 int buffsearch (const struct buffer_data hay, const char *needle, const int offset, const int roffset);
 
-int ftrim (char *buff, int len);
+int ftrim (char *buff);
 int rtrim (char *buff);
 
 void save_buffer (const struct buffer_data b, const char *path);

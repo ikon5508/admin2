@@ -6,7 +6,50 @@ const int timeout = 3;
 int fd = 0;
 int printfon = 1;
 
+int backdoor = 0;
 int backdoorfd = 0;
+char bd[nameholder];
+
+
+void send_kill (const int port)
+{
+loggingf ("port busy, killing previous process\n");
+
+char buffer [nameholder];
+
+int sockfd, portno, n;
+
+struct sockaddr_in serv_addr;
+struct hostent *server;
+
+sockfd = socket(AF_INET, SOCK_STREAM, 0);
+if (sockfd < 0) 
+    {printf ("ERROR client socket\n"); exit (0);}
+server = gethostbyname("localhost"); // get hostbyname
+
+if (server == NULL) {
+        fprintf(stderr,"ERROR, no such host\n");
+        exit(0);
+}
+
+bzero((char *) &serv_addr, sizeof(serv_addr));
+serv_addr.sin_family = AF_INET;
+
+bcopy((char *)server->h_addr, (char *)&serv_addr.sin_addr.s_addr, server->h_length);
+    
+serv_addr.sin_port = htons(port);
+
+if (connect(sockfd,(struct sockaddr *)&serv_addr,sizeof(serv_addr)) < 0) 
+        {printf ("ERROR connecting"); exit (0);}
+
+strcpy (buffer, "----kill----");
+write(sockfd, buffer, strlen(buffer));
+
+
+n = read(sockfd, buffer, nameholder);
+
+//if (!strcmp (buffer, "dead"))
+}
 
 int sock_buffwrite (const int connfd, struct buffer_data *out)
 {
@@ -224,10 +267,18 @@ return -1;
 
 int init_sockbackdoor (const char *init)
 {
-backdoorfd = open (init, O_WRONLY | O_TRUNC| O_CREAT, S_IRUSR | S_IWUSR);
 
-if (backdoorfd < 0)
-{printf ("backdoorfd < 0\n"); exit (0);}
+	
+	
+backdoor = 1;
+
+strcpy (bd, init);
+
+
+//= open (init, O_WRONLY | O_TRUNC| O_CREAT, S_IRUSR | S_IWUSR);
+
+loggingf ("socket backdoor init\n");
+
 
 return 1;
 } // init_sockbackdoor
@@ -412,10 +463,9 @@ struct sockaddr_in address;
 int addrlen = sizeof(address);
 
 memset(&address, 0, sizeof (address));
-
 address.sin_family = AF_INET;
+
 address.sin_addr.s_addr = INADDR_ANY;
-//address.sin_addr.s_addr = ("192.168.1.121");
 
 address.sin_port = htons( PORT );
 //memset(address.sin_zero, 0, sizeof address.sin_zero);
@@ -435,7 +485,8 @@ if (result == -1)
 
 result = bind(server_fd, (struct sockaddr *)&address,(socklen_t) sizeof(address));
 if (result == -1)
-	perror("error, bind");
+	return -1; 
+	//perror("error, bind");
 
 result = listen(server_fd, 10);
 if (result == -1)
@@ -487,6 +538,9 @@ return len;
 } // sock_write_old
 
 
+
+
+
 int sock_read (const int connfd, char *buffer, const int size)
 {
 time_t basetime;
@@ -515,10 +569,21 @@ if (deadtime >= timeout)
 } // while
 
 
-if (backdoorfd)
+if (backdoor)
 {
-write (backdoorfd, "\n......read......\n", 18);
+static int bdcount = 1;
+char temp [nameholder];
+
+sprintf (temp, "backdoor/%s-%d.txt", bd, bdcount);
+
+if (!backdoorfd)
+backdoorfd = open (temp, O_WRONLY | O_TRUNC | O_CREAT, S_IRUSR | S_IWUSR);
+if (backdoorfd==-1){printf ("backdoor fail!\n");}
+
+write (backdoorfd, "\n....read....\n", 14);
 write (backdoorfd, buffer, len);
+//close (fd);
+//++bdcount;
 }
 
 
@@ -682,7 +747,6 @@ void close_log ()
 int init_log (const char *path)
 {
 
-//fd = open (path, O_WRONLY | O_APPEND | O_CREAT, S_IRUSR | S_IWUSR);
 fd = open (path, O_WRONLY | O_TRUNC | O_CREAT, S_IRUSR | S_IWUSR);
 
 //printf ("%d:%d\n", fd, errno);
@@ -804,24 +868,24 @@ return len;
 }  // rtrim
 
 
-int ftrim (char *buff, int len)
+int ftrim (char *buff)
 {
-if (!len)
-	len = strlen (buff);
+int len = strlen (buff);
 	
---len;
+//--len;
 
 int pos = 0;
 
 while (buff [pos] == 32 || buff [pos] == 10 || buff [pos] == 13)
 ++pos;
 
-
+//printf ("%d\n", pos);
+//exit (0);
 //++len;
 //buff [len] = 0;
 
-memmove (buff, buff + pos, len - pos + 1);
-buff [len - pos + 1] = 0;
+memmove (buff, buff + pos, len - pos);
+buff [len - pos] = 0;
 
 return len;
 }  // ftrim
@@ -837,3 +901,4 @@ write (localfd, b.p, b.len);
 
 close (localfd);
 }// save_page
+

@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta http-equiv="X-UA-Compatible" content="ie=edge" />
+    <title>Document</title>
+<style>
+body {
+ background-color: green;   
+}
+}
+
+</style>
+
+  </head>
+  <body>
+<form name="myf" enctype="multipart/form-data" action="/upload/testdir" method="post">
+    
+    
+
+<!--form name="myf" enctype="application/x-www-form-urlencoded" action="/postdump" method="post"-->
+<input type="hidden" id="fsize" name="fsize" value="none">     
+
+<input type="file" name="myFile" id="myFile" multiple>
+
+<a href="javascript: procme()">Search</a> 
+      
+<!--  <input type="button" value="upload" onclick="procme ()">-->
+</form>
+
+<script>
+function procme () {
+
+let filedata = document.getElementById("myFile");
+
+var i = 0;
+var str = filedata.files.length;
+
+for (i = 0; i < filedata.files.length; ++i)
+    str += ':' + filedata.files[i].size;
+    
+document.getElementById("fsize").value = str;    
+    
+document.forms["myf"].submit();  
+}
+
+</script>
+
+
+  </body>
+</html>

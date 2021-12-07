@@ -8,9 +8,7 @@
     body {
         overflow: hidden;
 font-family: Arial, Helvetica, sans-serif;
-background-color: black;
-        
-    }
+}
 .button {
     padding-left:20px;
   padding-right:20px;
@@ -22,7 +20,7 @@ background-color: black;
         margin: 0;
         position: fixed;
         top: 0px;
-        bottom: 50px;
+        bottom: 30px;
         left: 0;
         right: 0;
 }
@@ -30,13 +28,55 @@ background-color: black;
 #tools {
         margin: 0;
         position: fixed;
-        bottom: 15px;
+        bottom: 10px;
         left: 0;
         right: 0;
 font-size:18px;
 
 }
-    
+.floating-btn {
+width: 80px;
+height: 80px;
+background: black;
+display: flex;
+border-radius: 50%;
+
+align-items: center;
+justify-content: center;
+text-decoration: none;
+border-radius: 50%;
+color: green;
+font-size: 40px;
+box-shadow: 2px 2px 5px rgba(0,0,0,0.25);
+position: fixed;
+right: 20px;
+bottom: 20px;
+transition: background 0.25s;
+}
+
+#overlay {
+position: fixed;
+display: none;
+width: 100%;
+height: 250px;
+top: auto;
+bottom: 50px;
+//background-color: rgba(0,0,0,0.5);
+z-index: 2;
+cursor: pointer;
+}
+
+#text {
+position: absolute;
+top: 50%;
+left: 50%;
+font-size: 50px;
+color: white;
+transform: translate(-50%,-50%);
+-ms-transform: translate(-50%,-50%);
+
+
+}
   </style>
 </head>
 <body>
@@ -55,6 +95,16 @@ break;
 }
 let n = str.slice (i + 1);
 window.document.title = (n);
+
+function on() {
+document.getElementById("overlay").style.display = "block";
+}
+
+
+function off() {
+document.getElementById("overlay").style.display = "none";
+}
+
 
 function save ()
 {
@@ -102,7 +152,7 @@ editor.setTheme(path);
 
 function test () {
    window.alert (window.location)
-editor.gotoLine (100);
+
 }
 
 function cut () {
@@ -129,36 +179,9 @@ function fntsz (evt) {
     document.getElementById('editor').style.fontSize=(ssz);
 }
 
-function ro () {
-var ab = document.getElementById ("cb");
-    
-if (ab.checked == true)
-editor.setReadOnly (true);
-        
-if (ab.checked == false)
-editor.setReadOnly (false);
-  
-    
-    
-}
-
 </script>
-
-<div id="editor">DELIMETER</div>
-
-
-
-<div id="tools">
-
-<input type="button" class="button" value="save" onclick="save()">
-<input type="button" class="button" value="test" onclick="test()">
-
-<select class="button" onchange="mode(event)">
-  <option>c_cpp</option>  
-  <option>html</option>
-    
-</select>
-
+<div id="overlay" onclick="off()">
+<div id="text">
 <select class="button" onchange="theme(event)">
 <option>terminal</option>  
 <option>monokai</option>  
@@ -181,8 +204,6 @@ editor.setReadOnly (false);
 <option>ambiance</option>
 </select>
 <select class="button" onchange="fntsz(event)">
-    <option>8</option>
-    <option>10</option>
     <option>12</option>
     <option>14</option>
     <option>16</option>
@@ -196,11 +217,32 @@ editor.setReadOnly (false);
     <option>34</option>
    
     
+</select> </div>
+</div>
+
+
+
+
+
+<div id="editor">DELIMETER</div>
+
+
+
+<div id="tools">
+
+<input type="button" class="button" value="save" onclick="save()">
+<input type="button" class="button" value="test" onclick="test()">
+
+<select class="button" onchange="mode(event)">
+  <option>c_cpp</option>  
+  <option>html</option>
+    
 </select>
+
+
 <input type="button" class="button" value="cut" onclick="cut()">
 <input type="button" class="button" value="copy" onclick="copy()">
 <input type="button" class="button" value="paste" onclick="paste()">
-<input type="checkbox" id="cb" onclick="ro()">
 </div>
 <script src="/file/ace-builds/src-noconflict/ace.js" type="text/javascript" charset="utf-8"></script>
 <script>
@@ -210,6 +252,7 @@ editor.setReadOnly (false);
     
     document.getElementById('editor').style.fontSize=("18px");
 </script>
+<a href="#" onclick="on ()" class="floating-btn">add</a>
 
 </body>
 </html>

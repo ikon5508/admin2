@@ -29,6 +29,9 @@ int showaction;
 // 0 for  non, 1 for show action page 2 for preview file
 char base_path [string_sz];
 char editor_path [string_sz];
+
+char dedicated_ip [INET_ADDRSTRLEN];    
+    
 };
 
 struct request_data
@@ -53,7 +56,7 @@ char code [100];
 int codelen;
 
 enum emode
-{err, action, file, edit, upload, config, root, favicon, websock} mode;
+{err, action, file, edit, upload, config, root, favicon, websock, postdump} mode;
 };
 
 void safe_fname (const struct request_data request, const char *fname, char *rtn);
