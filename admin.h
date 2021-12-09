@@ -48,7 +48,7 @@ char method;
 int fd;
 
 int procint;
-long content_len;
+int content_len;
 char *procpnt;
 
 char user_agent [200];

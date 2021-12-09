@@ -306,7 +306,7 @@ printf ("len: %d\n", inbuff.len);
 */
 } // websock
 
-long get_nextsize (string *fdata)
+int get_nextsize (string *fdata)
 {
 int n = getnext (fdata->p, ':', fdata->procint + 1, fdata->len);
 if (n ==-1) n = fdata->len;
@@ -315,7 +315,7 @@ char temp [10];
 
 midstr (fdata->p, temp, fdata->procint + 1, n);
 
-long rtn = atol (temp);
+int rtn = atoi (temp);
 
 fdata->procint = n;
 
@@ -747,7 +747,7 @@ d2 = getnext (inbuff.p, 10, d1, inbuff.len);
 if (d2 ==-1) {send_txt (fd, "error end (669)"); request.procint = -1; return request;}
 midstr (inbuff.p, temp, d1, d2);
 rtrim (temp);
-request.content_len = atol (temp);
+request.content_len = atoi (temp);
 
 d1 = search (inbuff.p, "gent: ", rear, inbuff.len);
 if (d1 ==-1) {send_txt (fd, "error gent: "); request.procint = -1; return request;}
@@ -1025,15 +1025,23 @@ void safe_fname (const struct request_data request, const char *fname, char *rtn
  }// while
 }// safe_fname
 
-int process_newfile (buffer *inbuff, const struct request_data request, const int safename, int *filenum, long *fsize, string *fdata)
+int process_newfile (buffer *inbuff, const struct request_data request, const int safename, int *filenum, int *fsize, string *fdata)
 {
-
+loggingf ("proc new overhang: %d\n", inbuff->procint);
 
 char temp1 [nameholder];
 char fullpath [string_sz];
 while (1)
 { // loop through possible multiplefiles
-int d1 = search (inbuff->p, "filename=\"", inbuff->procint, inbuff->len);
+int d1 = 0;
+	
+if (inbuff->procint == 0)
+d1 = search (inbuff->p, "filename=\"", 0, inbuff->len);
+else	
+d1 = search (inbuff->p, "filename=\"", inbuff->len - inbuff->procint, inbuff->len);
+
+
+
 if (d1==-1) {loggingf ("no filename: 1035\n"); return -1;}
 int d2 = getnext (inbuff->p, '\"', d1 + 1, inbuff->len);
 
@@ -1048,7 +1056,7 @@ int localfd = open (fullpath, O_WRONLY | O_TRUNC| O_CREAT, S_IRUSR | S_IWUSR);
 if (localfd ==-1) {loggingf ("error 1044\n"); exit(0);}
 
 *fsize = get_nextsize (fdata);
-loggingf ("fsize: %l\n", *fsize);
+loggingf ("fsize: %d\n", *fsize);
 *filenum += 1;
 int startdata = getnext (inbuff->p, '\n', d2 + 3, inbuff->len);
 startdata += 3;
@@ -1061,7 +1069,7 @@ loggingf ("fsize contained within remaining frame, looping for more files 1057\n
 write (localfd, inbuff->p + startdata, *fsize);
 close (localfd);
 
-inbuff->procint = startdata;
+inbuff->procint = leftover;
 }else{ // if small
 printf ("1066 fsize spans frames exiting proc_newfile\n");
 write (localfd, inbuff->p + startdata, inbuff->len - startdata);
@@ -1097,15 +1105,15 @@ int d1 = 0, d2 = 0;
 char temp1 [nameholder], temp2 [nameholder];
 char fullpath [string_sz];
 int filecount = 0, filenum = 0;
-long fsize = 0, read_progress = 0;
-long file_progress = 0;
+int fsize = 0, read_progress = 0;
+int file_progress = 0;
 int startdata = 0, enddata = 0;
 int localfd = -1;
 
 if (request.procint > 0)
 {
 read_progress = request.mainbuff->len - request.procint + request.codelen + 2;	
-loggingf ("data started in first xmission: %l / %l\n", read_progress, request.content_len);
+loggingf ("data started in first xmission: %d / %l\n", read_progress, request.content_len);
 //find second boundary, place into d1
 
   // find start of fdata place into d1
@@ -1163,7 +1171,7 @@ localfd = open (fullpath, O_WRONLY | O_TRUNC| O_CREAT, S_IRUSR | S_IWUSR);
 	if (localfd ==-1) {loggingf ("error 1160\n"); exit(0);}
 filenum = 1;
 fsize = get_nextsize (&fdata);
-loggingf ("file opened: %s, [%l]", fullpath, fsize);
+loggingf ("file opened: %s, [%d]", fullpath, fsize);
 
 
 // if fsize smaller than remaining buffer
@@ -1185,7 +1193,7 @@ return 1;} // if no more files and all data transmitted in single xmission
 enddata = request.mainbuff->len - startdata;
 write (localfd, request.mainbuff->p + startdata, enddata);
 file_progress = enddata;
-loggingf ("first file started in main, spans frames, %l\n", file_progress);
+loggingf ("first file started in main, spans frames, %d\n", file_progress);
 
     
 } // if file single / multi reciever 
@@ -1206,7 +1214,7 @@ inbuff.len = sock_read (request.fd, inbuff.p, inbuff.max);
 if (inbuff.len ==-1){loggingf ("client timed out\n"); return -1;}
 inbuff.procint = 0;
 read_progress += inbuff.len;
-loggingf ("read progress: %l / %l\n", read_progress, request.content_len);
+//loggingf ("read progress: %d / %d\n", read_progress, request.content_len);
 
 //if fdata started, but not finished
 
@@ -1234,13 +1242,13 @@ loggingf ("1227 filecount: %d\n", filecount);
 inbuff.procint = d1;
 // search for new file(s)
 localfd = process_newfile (&inbuff, request, safename, &filenum, &fsize, &fdata);
-if (filenum == filecount)
-	{loggingf ("all files recieved, 1234\n"); break;}
+//if (filenum == filecount)
+//	{loggingf ("all files recieved, 1234\n"); break;}
 
 if (localfd > 0) 
 {
 file_progress = inbuff.procint; 
-loggingf ("1238 file %d opened, spans %l / %l\n", filenum, file_progress, fsize);
+loggingf ("1238 file %d opened, spans %d / %d\n", filenum, file_progress, fsize);
 } // if
 continue;
 } // if fdata incomplete == 0
@@ -1249,7 +1257,7 @@ continue;
 //if fdata not started at all
 if (fdata.len ==-1)
 {
-printf ("fdata not started process now -1\n");
+loggingf ("fdata not started process now -1\n");
 d1 = search (inbuff.p, "name=\"fsize\"", 0, inbuff.len);
 if (d1==-1) {printf ("error locating fdata 1240"); exit (0);}
 d1 += 3;
@@ -1278,7 +1286,7 @@ localfd = process_newfile (&inbuff, request, safename, &filenum, &fsize, &fdata)
 
 if (localfd > 0) {
 file_progress = inbuff.procint;
-loggingf ("1274 file %d opened, spans %l / %l\n", filenum, file_progress, fsize);
+loggingf ("1274 file %d opened, spans %d / %d\n", filenum, file_progress, fsize);
 } // if file left open
 
 continue;
@@ -1289,12 +1297,12 @@ if (localfd ==-1)
 {
 loggingf ("1286 file not opened\n");
 localfd = process_newfile (&inbuff, request, safename, &filenum, &fsize, &fdata);
-if (filenum == filecount)
-	break;
+//if (filenum == filecount)
+//	break;
 
 if (localfd > 0) {
 file_progress += inbuff.procint;
-loggingf ("1293 file %d opened, spans %l / %l\n", filenum, file_progress, fsize);
+loggingf ("1293 file %d opened, spans %d / %d\n", filenum, file_progress, fsize);
 } // if file left open
 continue;    
 }// if no file ooen
@@ -1307,24 +1315,37 @@ file_progress += inbuff.len;
 
 if (file_progress > fsize)
 {
+loggingf ("closing: %d\n", filenum);
 ftruncate (localfd, fsize);
 close (localfd);
 localfd =-1;
 
-d1 = file_progress - fsize;
-d2 = inbuff.len - d1;
 
+d1 = file_progress - fsize;
+//d2 =  inbuff.len - d1;
+//
+//
+//
+//
+//
+// error here d2 was negative
+//
+//
+//
+loggingf ("fsize %d / %d, overhang %d\n", fsize, file_progress, d1);
+//loggingf ("%d, overhang, check for more files\n", d2);
 if (filenum == filecount)
 {loggingf ("1313 all files recieved"); break;}
 
-inbuff.procint = d2;
+inbuff.procint = d1;
 localfd = process_newfile (&inbuff, request, safename, &filenum, &fsize, &fdata);
-if (filenum == filecount)
-	break;
+
+//if (filenum == filecount)
+//	break;
 
 if (localfd > 0){
  file_progress = inbuff.procint;
-loggingf ("1322 file %d opened, spans %l / %l\n", filenum, file_progress, fsize);
+loggingf ("1322 file %d opened, spans %d / %d\n", filenum, file_progress, fsize);
 } // if file left open
 continue;    
 } // if file progress spills over
