@@ -8,7 +8,6 @@
 #include <openssl/buffer.h>
 #include <stdint.h>
 
-int sandbox_mode = 0;
 
 int get_action (const struct args_data args, const struct request_data request)
 {
@@ -328,7 +327,7 @@ int main (int argc, char **argv)
 signal(SIGPIPE, SIG_IGN);
 struct args_data args;
 args.port = 9999;
-args.showaction = 2;
+args.showaction = 0;
 // 0 for none, 1 show action page 2 load previewcon action page
 strcpy (args.base_path, ".");
 strcpy (args.editor_path, "aceeditor.htm");
@@ -374,10 +373,8 @@ struct request_data request;
 loggingf ("waiting\n");
 
 int connfd = 0;
-if (backdoor == 3)
+if (backdoor != 3)
 {
-printf ("backdoor skip accept\n");
-}else{
 connfd = accept(servfd, (struct sockaddr *)&address, (socklen_t*)&addrlen);
 sock_setnonblock (connfd);
 
@@ -1025,7 +1022,8 @@ void safe_fname (const struct request_data request, const char *fname, char *rtn
  }// while
 }// safe_fname
 
-int process_newfile (buffer *inbuff, const struct request_data request, const int safename, int *filenum, int *fsize, string *fdata)
+/*
+int process_newfile (ubuffer *inbuff, const struct request_data request, const int safename, int *filenum, int *fsize, string *fdata)
 {
 loggingf ("proc new overhang: %d\n", inbuff->procint);
 
@@ -1036,16 +1034,16 @@ while (1)
 int d1 = 0;
 	
 if (inbuff->procint == 0)
-d1 = search (inbuff->p, "filename=\"", 0, inbuff->len);
+d1 = usearch (inbuff->p, "filename=\"", 0, inbuff->len);
 else	
-d1 = search (inbuff->p, "filename=\"", inbuff->len - inbuff->procint, inbuff->len);
+d1 = usearch (inbuff->p, "filename=\"", inbuff->len - inbuff->procint, inbuff->len);
 
 
 
 if (d1==-1) {loggingf ("no filename: 1035\n"); return -1;}
-int d2 = getnext (inbuff->p, '\"', d1 + 1, inbuff->len);
+int d2 = ugetnext (inbuff->p, '\"', d1 + 1, inbuff->len);
 
-midstr (inbuff->p, temp1, d1, d2);
+umidstr (inbuff->p, temp1, d1, d2);
 loggingf ("new file name found: %s\n", temp1);
 
 if (safename) safe_fname (request, temp1, fullpath);
@@ -1058,7 +1056,7 @@ if (localfd ==-1) {loggingf ("error 1044\n"); exit(0);}
 *fsize = get_nextsize (fdata);
 loggingf ("fsize: %d\n", *fsize);
 *filenum += 1;
-int startdata = getnext (inbuff->p, '\n', d2 + 3, inbuff->len);
+int startdata = ugetnext (inbuff->p, '\n', d2 + 3, inbuff->len);
 startdata += 3;
 
 int leftover = inbuff->len - startdata;
@@ -1079,39 +1077,33 @@ return localfd;
 } // loop
 return -1;
 } // process new file
-//long get_nextsize (fdata)
-// fails when fdata too long either no boundary and continue or boundary no filename
-// bound no filename also affects main reader loop, needs continuation
-// fails when filename not started already (incomplete sequence) 
+*/
+
 int put_file (const struct request_data request)
 {
 loggingf ("put_file commence\n");
 
 const int safename = 1;
 
-struct buffer_data inbuff;
-char in [string_sz];
-inbuff.p = in;
-inbuff.len = 0;
-inbuff.max = string_sz;
-
 string fdata;
 fdata.len =-1;
 fdata.procint = 0;
 
-string strtmp;
+//string strtmp;
 
-int d1 = 0, d2 = 0;
-char temp1 [nameholder], temp2 [nameholder];
-char fullpath [string_sz];
+//char temp1 [nameholder], temp2 [nameholder];
 int filecount = 0, filenum = 0;
 int fsize = 0, read_progress = 0;
 int file_progress = 0;
-int startdata = 0, enddata = 0;
 int localfd = -1;
 
 if (request.procint > 0)
 {
+int startdata = 0, enddata = 0;
+char fname [nameholder];
+char fullpath [string_sz];
+int d1 = 0, d2 = 0;
+char sfsize [nameholder];
 read_progress = request.mainbuff->len - request.procint + request.codelen + 2;	
 loggingf ("data started in first xmission: %d / %l\n", read_progress, request.content_len);
 //find second boundary, place into d1
@@ -1136,13 +1128,12 @@ ftrim (fdata.p);
 fdata.len = rtrim (fdata.p);
 loggingf ("fdata trim: %s len: %d\n", fdata.p, fdata.len);
 fdata.procint = getnext (fdata.p, ':', 0, fdata.len);
-midstr (fdata.p, temp1, 0, fdata.procint);
-loggingf ("filecount: %s\n", temp1);
-filecount = atoi (temp1);
+midstr (fdata.p, sfsize, 0, fdata.procint);
+loggingf ("filecount: %s\n", sfsize);
+filecount = atoi (sfsize);
 
 loggingf ("file count %d\n", filecount);
 } // if complete fdata in first xmission
-
 else if (fdata.len == 0) {printf ("fdata spans buffer reads trigger 1132\n");goto multi;}
 
 loggingf ("endata: %d bufflen: %d\n", enddata, request.mainbuff->len);
@@ -1157,21 +1148,21 @@ d1 = search (request.mainbuff->p, "filename=\"", enddata, request.mainbuff->len)
 d2 = getnext (request.mainbuff->p, '\"', d1 + 1, request.mainbuff->len);
 	if (d2==-1) {loggingf ("search error 1147\n"); exit (0);}
 
-midstr (request.mainbuff->p, temp1, d1, d2);
-loggingf ("fname: %s\n", temp1);
+midstr (request.mainbuff->p, fname, d1, d2);
+loggingf ("fname: %s\n", fname);
 
 startdata = getnext (request.mainbuff->p, '\n', d2 + 4, request.mainbuff->len);
 	if (startdata ==-1) {loggingf ("error 1153\n"); exit (0);}
 startdata += 3;
 
-if (safename) safe_fname (request, temp1, fullpath);
-else sprintf (fullpath, "%s/%s",request.fullpath, temp1);
+if (safename) safe_fname (request, fname, fullpath);
+else sprintf (fullpath, "%s/%s",request.fullpath, fname);
 
 localfd = open (fullpath, O_WRONLY | O_TRUNC| O_CREAT, S_IRUSR | S_IWUSR);
 	if (localfd ==-1) {loggingf ("error 1160\n"); exit(0);}
 filenum = 1;
 fsize = get_nextsize (&fdata);
-loggingf ("file opened: %s, [%d]", fullpath, fsize);
+loggingf ("file opened: %s, %d: bytes\n", fullpath, fsize);
 
 
 // if fsize smaller than remaining buffer
@@ -1206,72 +1197,41 @@ loggingf ("first file started in main, spans frames, %d\n", file_progress);
 
 multi:printf("ahead to subsequent reads\n");
 
-// do subsequent reads here
-
-while (read_progress < request.content_len)
-{
-inbuff.len = sock_read (request.fd, inbuff.p, inbuff.max);
-if (inbuff.len ==-1){loggingf ("client timed out\n"); return -1;}
+struct ubuffer_data inbuff;
+unsigned char in [string_sz];
+inbuff.p = in;
+inbuff.len = 0;
+inbuff.max = string_sz;
 inbuff.procint = 0;
+
+// first check that fdata is completed
+if (fdata.len == 0 || fdata.len == -1)
+{
+loggingf ("fdata incomplete\n");
+int startdata = 0, enddata = 0;
+char temp1 [nameholder];
+
+inbuff.len = usock_read (request.fd, inbuff.p, inbuff.max);
+if (inbuff.len ==-1){loggingf ("client timed out\n"); return -1;}
 read_progress += inbuff.len;
-//loggingf ("read progress: %d / %d\n", read_progress, request.content_len);
 
-//if fdata started, but not finished
-
-if (fdata.len == 0)
+if (fdata.len == -1)
 {
-loggingf ("fdata started but not finished 0\n");
-d1 = getnext (inbuff.p, 10, 0, inbuff.len);
-if (d1 ==-1) {loggingf ("unable to locate fdata end\n"); exit (0);}
-    
-d2 = ftrim (fdata.p);
-//d2 = strlen(fdata.p);
+loggingf ("fdata not started at all\n");
+startdata = usearch (inbuff.p, "name=\"fsize\"", 0, inbuff.len);
+if (startdata==-1) {printf ("error locating fdata 1240"); exit (0);}
+startdata += 3;
+} // if fdata not started at all
 
-strncat (fdata.p + d2, inbuff.p, d1);
-fdata.len = rtrim (fdata.p);
-loggingf ("1220 completed fdata: %s, len: %d", fdata.p, fdata.len);
+enddata = ugetnext (inbuff.p, '\n', startdata + 1, inbuff.len);
+if (enddata ==-1) {loggingf ("1227 error locating fdata end\n"); return -1;}
+inbuff.procint = enddata;
 
-// must calc filecount here
-fdata.procint = getnext (fdata.p, ':', 0, fdata.len);
-midstr (fdata.p, temp1, 0, fdata.procint);
-filecount = atoi (temp1);
-
-loggingf ("1227 filecount: %d\n", filecount);
-
-//place end of fdata into procint
-inbuff.procint = d1;
-// search for new file(s)
-localfd = process_newfile (&inbuff, request, safename, &filenum, &fsize, &fdata);
-//if (filenum == filecount)
-//	{loggingf ("all files recieved, 1234\n"); break;}
-
-if (localfd > 0) 
-{
-file_progress = inbuff.procint; 
-loggingf ("1238 file %d opened, spans %d / %d\n", filenum, file_progress, fsize);
-} // if
-continue;
-} // if fdata incomplete == 0
-
-
-//if fdata not started at all
-if (fdata.len ==-1)
-{
-loggingf ("fdata not started process now -1\n");
-d1 = search (inbuff.p, "name=\"fsize\"", 0, inbuff.len);
-if (d1==-1) {printf ("error locating fdata 1240"); exit (0);}
-d1 += 3;
-
-d2 = getnext (inbuff.p, '\n', d1 +1, inbuff.len);
-if (d2==-1) {loggingf ("error locating fdata end 1244"); exit (0);}
-
-//printf ("d1: %d, d2: %d\n", d1, d2);
-
-midstr (inbuff.p, fdata.p, d1, d2);
+umidstr (inbuff.p, fdata.p, startdata, enddata);
 
 ftrim (fdata.p);
 fdata.len = rtrim (fdata.p);
-//loggingf ("1260 fdata: %s, len: %d\n", fdata.p, fdata.len);
+loggingf ("1235 fdata: %s, len: %d\n", fdata.p, fdata.len);
 
 fdata.procint = getnext (fdata.p, ':', 0, fdata.len);
 
@@ -1279,83 +1239,94 @@ midstr (fdata.p, temp1, 0, fdata.procint);
 
 filecount = atoi (temp1);
 loggingf ("1267 filecount: %d\n", filecount);
-localfd = process_newfile (&inbuff, request, safename, &filenum, &fsize, &fdata);
-
-//if (filenum == filecount)
-//	break;
-
-if (localfd > 0) {
-file_progress = inbuff.procint;
-loggingf ("1274 file %d opened, spans %d / %d\n", filenum, file_progress, fsize);
-} // if file left open
-
-continue;
-} // if no fdata, process and open file
+} // if fdata incomplete
 
 
-if (localfd ==-1) 
+// file reads now
+// do subsequent reads here
+
+while (read_progress < request.content_len || inbuff.procint > 0)
+{ // if reading done, but file data remains
+
+if (inbuff.procint > 0)
+{ // ifdata remains in buff
+int startdata = usearch (inbuff.p, "filename=\"", inbuff.procint, inbuff.len);
+if (startdata ==-1) {loggingf ("no additional file\n"); inbuff.procint = 0; continue;}
+
+int enddata = ugetnext (inbuff.p, '\"', startdata +1, inbuff.len);
+char fname [nameholder];
+umidstr (inbuff.p, fname, startdata, enddata);
+loggingf ("new file name found: %s\n", fname);
+
+char fullpath [string_sz];
+if (safename) safe_fname (request, fname, fullpath);
+else sprintf (fullpath, "%s/%s", request.fullpath, fname);
+loggingf ("fullpath: %s\n", fullpath);
+
+localfd = open (fullpath, O_WRONLY | O_TRUNC| O_CREAT, S_IRUSR | S_IWUSR);
+if (localfd ==-1) {loggingf ("error 1269\n"); exit(0);}
+
+fsize = get_nextsize (&fdata);
+loggingf ("fsize: %d\n", fsize);
+filenum += 1;
+
+
+startdata = ugetnext (inbuff.p, '\n', enddata + 3, inbuff.len);
+startdata += 3;
+
+int leftover = inbuff.len - startdata;
+// check to write fsize or remaining buffer, set procint and continue;
+if (leftover > fsize)
 {
-loggingf ("1286 file not opened\n");
-localfd = process_newfile (&inbuff, request, safename, &filenum, &fsize, &fdata);
-//if (filenum == filecount)
-//	break;
+write (localfd, inbuff.p + startdata, fsize);
+inbuff.procint = startdata;
+close (localfd);
+//localfd = -1;
+loggingf ("more data possible 1287 loop\n");
+continue;
+}else{
+write (localfd, inbuff.p + startdata, inbuff.len - startdata);
+file_progress = inbuff.len - startdata;
+loggingf ("open file spans %d\n", localfd);
+//inbuff.len = 0;
+inbuff.procint = 0;
+} // fsize bigger, data spans
+} // if data remains in buff
 
-if (localfd > 0) {
-file_progress += inbuff.procint;
-loggingf ("1293 file %d opened, spans %d / %d\n", filenum, file_progress, fsize);
-} // if file left open
-continue;    
-}// if no file ooen
+loggingf ("localfds %d\n", localfd);
 
 
+
+inbuff.len = usock_read (request.fd, inbuff.p, inbuff.max);
+if (inbuff.len ==-1){loggingf ("client timed out\n"); return -1;}
+read_progress += inbuff.len;
 if (localfd > 0)
 {
 write (localfd, inbuff.p, inbuff.len);
 file_progress += inbuff.len;
 
+loggingf ("%d / %d\n", file_progress, request.content_len);
 if (file_progress > fsize)
 {
 loggingf ("closing: %d\n", filenum);
 ftruncate (localfd, fsize);
 close (localfd);
-localfd =-1;
+//localfd =-1;
+
+int leftover = file_progress - fsize;
+inbuff.procint = inbuff.len - leftover;
 
 
-d1 = file_progress - fsize;
-//d2 =  inbuff.len - d1;
-//
-//
-//
-//
-//
-// error here d2 was negative
-//
-//
-//
-loggingf ("fsize %d / %d, overhang %d\n", fsize, file_progress, d1);
-//loggingf ("%d, overhang, check for more files\n", d2);
-if (filenum == filecount)
-{loggingf ("1313 all files recieved"); break;}
+} // if file done
+} // if file already open
 
-inbuff.procint = d1;
-localfd = process_newfile (&inbuff, request, safename, &filenum, &fsize, &fdata);
+if (localfd == -1)
+{loggingf ("no file open 1321\n"); inbuff.procint = 1;}
 
-//if (filenum == filecount)
-//	break;
+} //while data remains
 
-if (localfd > 0){
- file_progress = inbuff.procint;
-loggingf ("1322 file %d opened, spans %d / %d\n", filenum, file_progress, fsize);
-} // if file left open
-continue;    
-} // if file progress spills over
-
-} //if localfd open
-
-} // while
-
-
-send_txt (request.fd, "all done");
+send_txt (request.fd, "done");
+loggingf ("done\n");
 return 1;
 } // put_file
 
@@ -1375,8 +1346,6 @@ return 1;
 
 int send_txt (const int fd, const char *txt)
 {
-if (sandbox_mode)
-	return 1;
 
 int len = strlen (txt);
 
@@ -1396,10 +1365,6 @@ return 1;
 
 int send_ftxt (const int fd, const char *format, ...)
 {
-
-if (sandbox_mode)
-	return 1;
-	
 va_list ap;
 
 va_start (ap, format);

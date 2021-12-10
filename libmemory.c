@@ -2,7 +2,7 @@
 
 const int timeout = 3;
 
-
+int bdcount = 1;
 int fd = 0;
 int printfon = 1;
 
@@ -121,6 +121,26 @@ if (buffer->p == NULL)
 } // init_buffer
 
 
+int ugetnext (const unsigned char *str, const int next, const int start, int end)
+{
+const int debug = 0;
+
+//if (end == 0)
+//end = strlen (str);
+
+for (int i = start; i < end; ++i)
+{
+    
+if (debug)
+printf ("c: %c - %c\n", str[i], next);
+        
+if (str[i] == next)
+	return i;
+} // for
+
+    return  -1;
+} // ugetnext
+
 int getnext (const char *str, const int next, const int start, int end)
 {
 const int debug = 0;
@@ -154,6 +174,19 @@ minor[count] = major[start];
 minor[count] = 0;
 return (count);
 } // end midstr
+
+int umidstr(const unsigned char *major, char *minor, int start, const int end)
+{
+int count = 0;
+while (start < end)
+{
+minor[count] = major[start];
+++start;
+++count;
+}
+minor[count] = 0;
+return (count);
+} // end umidstr
 
 void buffcatf (struct buffer_data *buff, const char *format, ...)
 {
@@ -264,23 +297,52 @@ return (i + x + 1);
 return -1;
 } // end search
 
-
-int init_sockbackdoor (const char *init)
+int usearch (const unsigned char *main, const char *minor, const int start, const int end)
 {
+int minorlen = strlen (minor) -1;
 
+int i, x;
+for (i = start; i < end; ++i)
+{
+if (main[i] == minor[0])
+{
+for (x = 1; x < minorlen; ++x)
+{
 	
-	
-backdoor = 1;
+if (main [i + x] != minor [x])
+ break; // if minor mismatch
 
+} // for x
+if (x == minorlen)
+return (i + x + 1);
+
+} // end if minor [0] hit
+
+} // end for i
+
+return -1;
+} // end usearch
+
+int init_sockbackdoor (const int type, const char *init)
+{
+backdoor = type;
+string path;
+
+sprintf (path.p, "sandbox/%s.txt", init);
 strcpy (bd, init);
 
+if (type == 1 || type == 2)
+{
 
-//= open (init, O_WRONLY | O_TRUNC| O_CREAT, S_IRUSR | S_IWUSR);
-
+backdoorfd = open (path.p, O_WRONLY | O_TRUNC| O_CREAT, S_IRUSR | S_IWUSR);
+if (backdoorfd == -1) {printf ("error libmem 280\n");}
+    
+    
+} // if
 loggingf ("socket backdoor init\n");
 
-
 return 1;
+
 } // init_sockbackdoor
 
 
@@ -495,15 +557,50 @@ if (result == -1)
 return (server_fd);
 }// end prep socket
 
+void softclose (const int fd, struct buffer_data *inbuff)
+{
+
+if (backdoor ==3) return;
+
+shutdown (fd,  SHUT_WR);
+
+//wait for client to close connection
+int a = -1;
+
+while (a) 
+{
+a=read(fd, inbuff->p, inbuff->max);
+
+//if (a > 0)
+//loggingf ("reading \"success\" in kill mode\n");
+
+if(a < 0)
+{
+usleep (1000);
+//logging ("closing, remote, not ready",1,0);
+}
+if(!a) 
+{
+loggingf ("Connection closed by client\n");
+} // if socket non blocked
+} // for wait for close bit.
+
+close(fd);
+} // softclose
+
 
 int sock_writeold (const int connfd, const char *buffer, int size)
 {
-time_t basetime;
-time (&basetime);
-
 
 if (size == 0)
     size = strlen (buffer);
+
+if (backdoor == 3)
+    return size;
+
+time_t basetime;
+time (&basetime);
+
 
 int len = -1;
 //nlogging ("bytes queued: ", out.len);
@@ -539,10 +636,26 @@ return len;
 
 
 
-
-
-int sock_read (const int connfd, char *buffer, const int size)
+int usock_read (const int connfd, unsigned char *buffer, const int size)
 {
+if (backdoor ==3)
+{
+loggingf ("sb fetch: %s-%d\n", bd, bdcount);
+string temp;
+sprintf (temp.p, "sandbox/%s-%d.txt", bd, bdcount);
+
+int tfd = open (temp.p, O_RDONLY);
+if (tfd == -1) {printf ("592 end of sandbox files: %s\n", temp.p); exit(0);}
+int rlen = read (tfd, buffer, size);
+
+close (tfd);
+++bdcount;
+return rlen;
+    
+} // if sandbox mode
+
+
+
 time_t basetime;
 time (&basetime);
 
@@ -569,22 +682,101 @@ if (deadtime >= timeout)
 } // while
 
 
-if (backdoor)
+if (backdoor == 2)
 {
-static int bdcount = 1;
-char temp [nameholder];
+string temp;
+sprintf (temp.p, "sandbox/%s-%d.txt", bd, bdcount);
 
-sprintf (temp, "backdoor/%s-%d.txt", bd, bdcount);
-
-if (!backdoorfd)
-backdoorfd = open (temp, O_WRONLY | O_TRUNC | O_CREAT, S_IRUSR | S_IWUSR);
-if (backdoorfd==-1){printf ("backdoor fail!\n");}
+int tfd = open (temp.p, O_WRONLY | O_TRUNC | O_CREAT, S_IRUSR | S_IWUSR);
+if (tfd == -1) {printf ("error opening log file 585\n"); return len;}
+write (tfd, buffer, len);
+close (tfd);
+++bdcount;
 
 write (backdoorfd, "\n....read....\n", 14);
 write (backdoorfd, buffer, len);
-//close (fd);
-//++bdcount;
-}
+}else if (backdoor == 1)
+{
+write (backdoorfd, "\n....read....\n", 14);
+write (backdoorfd, buffer, len);
+
+} // if backdoor
+
+
+
+	
+return len;
+} // sock_read
+
+
+
+int sock_read (const int connfd, char *buffer, const int size)
+{
+if (backdoor ==3)
+{
+string temp;
+sprintf (temp.p, "sandbox/%s-%d.txt", bd, bdcount);
+
+loggingf ("sb fetch: %s-%d\n", bd, bdcount);
+
+int tfd = open (temp.p, O_RDONLY);
+if (tfd == -1) {printf ("592 end of sandbox files: %s\n", temp.p); exit(0);}
+int rlen = read (tfd, buffer, size);
+
+close (tfd);
+++bdcount;
+return rlen;
+    
+} // if sandbox mode
+
+
+
+time_t basetime;
+time (&basetime);
+
+int len = -1;
+//read (connfd, inb->data, in_size);
+while (len < 0)
+{
+len = read (connfd, buffer, size);
+
+if (len == -1)
+{
+usleep (1000);
+time_t deadtime;
+time (&deadtime);
+
+deadtime -= basetime;
+if (deadtime >= timeout)
+	{return -1;}
+
+} // if -1
+
+	
+	
+} // while
+
+
+if (backdoor == 2)
+{
+string temp;
+sprintf (temp.p, "sandbox/%s-%d.txt", bd, bdcount);
+
+int tfd = open (temp.p, O_WRONLY | O_TRUNC | O_CREAT, S_IRUSR | S_IWUSR);
+if (tfd == -1) {printf ("error opening log file 585\n"); return len;}
+write (tfd, buffer, len);
+close (tfd);
+++bdcount;
+
+write (backdoorfd, "\n....read....\n", 14);
+write (backdoorfd, buffer, len);
+}else if (backdoor == 1)
+{
+write (backdoorfd, "\n....read....\n", 14);
+write (backdoorfd, buffer, len);
+
+} // if backdoor
+
 
 
 	
@@ -667,7 +859,7 @@ int len = 0;
 int d;
 char c;
 char *s;
-
+long l;
 
 for (int fplace = 0; fplace < formatlen; ++fplace)
 {
@@ -703,6 +895,12 @@ len+= sprintf (entry + len, "%d", d);
 ++fplace;
 } // if d
     
+if (type == 'l')
+{
+l = va_arg(ap, long);
+len+= sprintf (entry + len, "%ld", l);
+++fplace;
+} // if d
 
 if (type == 'c')
 {
@@ -783,39 +981,6 @@ int buffsearch (const struct buffer_data hay, const char *needle, const int offs
 return p - haystack + offset + strlen(needle);
     return -1; 
 } // buffwrite
-
-/*
-int getnext (const char *base, int c, const int offset, const int len)
-{
-
-    char haystack[len - offset];
-    memcpy(haystack, base+offset, len - offset);
-char *r = strchr (haystack, c);
-
-if (r == NULL)
-	return -1;
-
-return r - haystack + offset;
-
-}
-*/
-/*
-int getlast (const char *str, const int c, const int len)
-{
-
-	
-    char haystack[len];
-    strncpy(haystack, str, len);
-char *r = strrchr (haystack, c);
-
-if (r == NULL)
-	return -1;
-
-return r - haystack;
-
-	
-}
-*/
 
 int getlast (const char *str, const int next, int end)
 {
