@@ -345,6 +345,9 @@ if (!strcmp (argv[i], "-p"))
 args.port = atoi (argv[i+1]);
 
 
+if (!strcmp (argv[i], "-dir"))
+strcpy (args.base_path, argv[i+1]);
+
 } // for args
 
 
@@ -1251,23 +1254,30 @@ while (read_progress < request.content_len || inbuff.procint > 0)
 if (inbuff.procint > 0)
 { // ifdata remains in buff
 int startdata = usearch (inbuff.p, "filename=\"", inbuff.procint, inbuff.len);
-if (startdata ==-1) {loggingf ("no additional file\n"); inbuff.procint = 0; continue;}
+if (startdata ==-1) {inbuff.procint = 0; continue;}
 
 int enddata = ugetnext (inbuff.p, '\"', startdata +1, inbuff.len);
+if (enddata ==1)
+{
+char t [100];
+
+umidstr (inbuff.p, t, startdata - 9, startdata + 20);
+    loggingf ("not sure how this happened: %s\n", t);
+    exit (0);
+}
 char fname [nameholder];
 umidstr (inbuff.p, fname, startdata, enddata);
-loggingf ("new file name found: %s\n", fname);
 
 char fullpath [string_sz];
-if (safename) safe_fname (request, fname, fullpath);
-else sprintf (fullpath, "%s/%s", request.fullpath, fname);
+//if (safename) safe_fname (request, fname, fullpath);
+//else 
+sprintf (fullpath, "%s/%s", request.fullpath, fname);
 loggingf ("fullpath: %s\n", fullpath);
 
 localfd = open (fullpath, O_WRONLY | O_TRUNC| O_CREAT, S_IRUSR | S_IWUSR);
 if (localfd ==-1) {loggingf ("error 1269\n"); exit(0);}
 
 fsize = get_nextsize (&fdata);
-loggingf ("fsize: %d\n", fsize);
 filenum += 1;
 
 
@@ -1282,20 +1292,14 @@ write (localfd, inbuff.p + startdata, fsize);
 inbuff.procint = startdata;
 close (localfd);
 //localfd = -1;
-loggingf ("more data possible 1287 loop\n");
 continue;
 }else{
 write (localfd, inbuff.p + startdata, inbuff.len - startdata);
 file_progress = inbuff.len - startdata;
-loggingf ("open file spans %d\n", localfd);
 //inbuff.len = 0;
 inbuff.procint = 0;
 } // fsize bigger, data spans
 } // if data remains in buff
-
-loggingf ("localfds %d\n", localfd);
-
-
 
 inbuff.len = usock_read (request.fd, inbuff.p, inbuff.max);
 if (inbuff.len ==-1){loggingf ("client timed out\n"); return -1;}
@@ -1305,23 +1309,22 @@ if (localfd > 0)
 write (localfd, inbuff.p, inbuff.len);
 file_progress += inbuff.len;
 
-loggingf ("%d / %d\n", file_progress, request.content_len);
 if (file_progress > fsize)
 {
 loggingf ("closing: %d\n", filenum);
 ftruncate (localfd, fsize);
 close (localfd);
-//localfd =-1;
+localfd =-1;
 
 int leftover = file_progress - fsize;
 inbuff.procint = inbuff.len - leftover;
 
-
+continue;
 } // if file done
 } // if file already open
 
 if (localfd == -1)
-{loggingf ("no file open 1321\n"); inbuff.procint = 1;}
+{ inbuff.procint = 1;}
 
 } //while data remains
 
