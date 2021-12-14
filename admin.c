@@ -327,7 +327,7 @@ int main (int argc, char **argv)
 signal(SIGPIPE, SIG_IGN);
 struct args_data args;
 args.port = 9999;
-args.showaction = 0;
+args.showaction = 1;
 // 0 for none, 1 show action page 2 load previewcon action page
 strcpy (args.base_path, ".");
 strcpy (args.editor_path, "aceeditor.htm");
@@ -347,6 +347,9 @@ args.port = atoi (argv[i+1]);
 
 if (!strcmp (argv[i], "-dir"))
 strcpy (args.base_path, argv[i+1]);
+
+if (!strcmp (argv[i], "-editor"))
+strcpy (args.editor_path, argv[i+1]);
 
 } // for args
 
@@ -785,6 +788,169 @@ return request;
 return request;	
 } // process_request
 
+
+int get_edit_file (const struct args_data args, const struct request_data request)
+{
+char outbuffer [maxbuffer];
+struct buffer_data outbuff;
+outbuff.p = outbuffer;
+outbuff.max = (maxbuffer);
+outbuff.len = 0;
+
+char ebuffer [maxbuffer];
+struct buffer_data editorbuffer;
+editorbuffer.p = ebuffer;
+editorbuffer.max = maxbuffer;
+
+char fbuffer [maxbuffer];
+struct buffer_data filebuffer;
+filebuffer.p = fbuffer;
+filebuffer.max = maxbuffer;
+
+char bookmarks_path [string_sz];
+sprintf (bookmarks_path, "%s%s", request.fullpath, ".bmk");
+
+int bookmarksfd = open (bookmarks_path, O_RDONLY);
+if (bookmarksfd < 0)
+    loggingf ("no bookmarks to load\n");
+
+int editorfd = open (args.editor_path, O_RDONLY);
+if (editorfd < 0)
+    {send_txt (request.fd, "bad editor"); return -1;}
+
+int filefd = open (request.fullpath, O_RDONLY);
+if (filefd < 0)
+    {send_txt (request.fd, "bad file name"); return -1;}
+
+editorbuffer.len = read (editorfd, editorbuffer.p, editorbuffer.max);
+filebuffer.len = read (filefd, filebuffer.p, filebuffer.max);
+
+//int assets = countassets (editorbuffer);
+
+close (editorfd);
+close (filefd);
+
+//make sure DELIMETER is below <!--bookmarks--> and process one after the other
+
+if (bookmarksfd > 0)
+{
+char bookmb [string_sz * 2];
+buffer bookmarks_file;
+bookmarks_file.p = bookmb;
+bookmarks_file.len = 0;
+bookmarks_file.max = string_sz * 2;
+
+bookmarks_file.len = read (bookmarksfd, bookmarks_file.p, bookmarks_file.max);
+close (bookmarksfd);
+
+editorbuffer.procint = search (editorbuffer.p, "<!--bookmarks-->", 0, editorbuffer.len);
+if (editorbuffer.procint < 0)
+    {send_txt (request.fd, "failed to find bookmarks demimeter"); return -1;}
+     
+memcpy (outbuff.p, editorbuffer.p, editorbuffer.procint - 16);
+outbuff.len = editorbuffer.procint - 16;
+
+string entry;
+char name [nameholder];
+char place [10];
+
+char bookmbe [string_sz * 2];
+buffer bookmarks_entry;
+bookmarks_entry.p = bookmbe;
+bookmarks_entry.len = 0;
+bookmarks_entry.max = string_sz * 2;
+
+//bookmarks_file
+//bookmarks_entry
+
+buffcatf (&bookmarks_entry, "<select class=\"button\" onchange=\"bookmark(event)\">\n");
+int start = 0, end = 0;
+
+while (1)
+{
+    end = getnext (bookmarks_file.p, 10, start, bookmarks_file.len);
+    if (end ==-1) break;
+    
+    entry.len = midstr (bookmarks_file.p, entry.p, start, end);
+    
+    int d1 = getnext (entry.p, 32, 0, entry.len);
+    
+    midstr (entry.p, place, 0, d1);
+    midstr (entry.p, name, d1, entry.len);
+    
+    buffcatf (&bookmarks_entry, "<option value=\"%s\">%s</option>\n", place, name);
+    
+    start = end + 1;
+
+} // while process bookmarks
+buffcatf (&bookmarks_entry, "</select>\n");
+
+
+memcpy (outbuff.p + outbuff.len, bookmarks_entry.p, bookmarks_entry.len);
+outbuff.len += bookmarks_entry.len;
+ 
+} // if add bookmarks
+
+int oldproc = editorbuffer.procint;
+
+editorbuffer.procint = search (editorbuffer.p, "DELIMETER", editorbuffer.procint, editorbuffer.len);
+if (editorbuffer.procint < 0)
+    {send_txt (request.fd, "failed to find main DELIMETER"); return -1;}
+     
+memcpy (outbuff.p + outbuff.len, editorbuffer.p + oldproc, editorbuffer.procint - oldproc - 9);
+outbuff.len += editorbuffer.procint - oldproc - 9;
+
+//send_txt(request.fd, outbuff.p);
+//exit (0);
+//return 1;
+
+for (int i = 0; i < filebuffer.len; ++i)
+{
+if (filebuffer.p [i] == '<')
+{
+outbuff.p [outbuff.len] = '&';
+outbuff.p [outbuff.len + 1] = 'l';
+outbuff.p [outbuff.len + 2] = 't';
+outbuff.p [outbuff.len + 3] = ';';
+outbuff.len += 4;
+continue;
+} // if
+
+if (filebuffer.p [i] == '>')
+{
+outbuff.p [outbuff.len] = '&';
+outbuff.p [outbuff.len + 1] = 'g';
+outbuff.p [outbuff.len + 2] = 't';
+outbuff.p [outbuff.len + 3] = ';';
+outbuff.len += 4;
+continue;
+} // if
+
+outbuff.p [outbuff.len] = filebuffer.p [i];
+++outbuff.len;
+} // for
+
+//send_txt(request.fd, outbuff.p);
+//exit (0);
+//return 1;
+
+memcpy (outbuff.p + outbuff.len, editorbuffer.p + editorbuffer.procint, editorbuffer.len - editorbuffer.procint);
+
+outbuff.len += editorbuffer.len - editorbuffer.procint;
+
+struct string_data head;
+head.len = sprintf (head.p, "%s%s%s%d\n\n", hthead, conthtml, contlen, outbuff.len);
+
+loggingf ("%d bytes: edit file served\n", outbuff.len);
+
+sock_writeold (request.fd, head.p, head.len);
+sock_buffwrite (request.fd, &outbuff);
+//return assets + 1;
+return 4;
+
+} // get_edit_file
+
+/*
 int get_edit_file (const struct args_data args, const struct request_data request)
 {
 
@@ -874,6 +1040,7 @@ sock_buffwrite (request.fd, &outbuff);
 //return assets + 1;
 return 4;
 } // get_edit_file
+*/
 
 int put_edit (const struct request_data request)
 {
@@ -1201,10 +1368,10 @@ loggingf ("first file started in main, spans frames, %d\n", file_progress);
 multi:printf("ahead to subsequent reads\n");
 
 struct ubuffer_data inbuff;
-unsigned char in [string_sz];
+unsigned char in [string_sz * 2];
 inbuff.p = in;
 inbuff.len = 0;
-inbuff.max = string_sz;
+inbuff.max = string_sz * 2;
 inbuff.procint = 0;
 
 // first check that fdata is completed
@@ -1227,7 +1394,7 @@ startdata += 3;
 } // if fdata not started at all
 
 enddata = ugetnext (inbuff.p, '\n', startdata + 1, inbuff.len);
-if (enddata ==-1) {loggingf ("1227 error locating fdata end\n"); return -1;}
+if (enddata ==-1) {loggingf ("1227 error locating fdata end\n"); exit (0);}
 inbuff.procint = enddata;
 
 umidstr (inbuff.p, fdata.p, startdata, enddata);
@@ -1291,7 +1458,7 @@ if (leftover > fsize)
 write (localfd, inbuff.p + startdata, fsize);
 inbuff.procint = startdata;
 close (localfd);
-//localfd = -1;
+localfd = -1;
 continue;
 }else{
 write (localfd, inbuff.p + startdata, inbuff.len - startdata);
