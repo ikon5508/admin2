@@ -835,23 +835,25 @@ int linecount = 0;
 int d1 = 0, d2 = 0;
 char line [string_sz];
 
-buffcatf (&bmlist, "<select onchange=bookmark (event)>\n");
+buffcatf (&bmlist, "<select class=\"button\" onchange=\"bookmark(event)\">\n");
 //strcpy (bmlist.p, "<select onchange=bookmark (event)>\n");
 //bmlist.len = strlen ("<select onchange=bookmark (event)>\n");
 
 while (1)
 {
-d2 = getnext (editorbuffer.p, 10, d1 + 1, editorbuffer.len);
-if (d2 ==-1) break;
+d2 = getnext (filebuffer.p, (int) '\n', d1 + 1, filebuffer.len);
+if (d2 ==-1) { /*loggingf ("lc: %d, break!!!\n", linecount);*/ break;}
 ++linecount;
-midstr (editorbuffer.p, line, d1, d2);
+midstr (filebuffer.p, line, d1, d2);
+//loggingf ("line: %s\n", line);
 int check = search (line, "// bm-", 0, d2 - d1);
 if (check > 0)
 {
+ loggingf ("match!!!\n");
     char bm [nameholder]; // duplicate name, but encapsulation should be ok
-    midstr (line, bm, check, strlen (line) - check);
-    
-    buffcatf (&bmlist, "<option value=%d>%s</option>\n", linecount, bm);
+    midstr (line, bm, check, strlen (line));
+    loggingf ("bookmark: %s\n", bm);
+    buffcatf (&bmlist, "<option value=\"%d\">%s</option>\n", linecount, bm);
 }// if bookmark
 
 d1 = d2;    
