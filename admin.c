@@ -2,13 +2,6 @@
 #include <signal.h>
 #include <openssl/sha.h>
 
-//Encodes Base64
-#include <openssl/bio.h>
-#include <openssl/evp.h>
-#include <openssl/buffer.h>
-#include <stdint.h>
-
-
 int get_action (const struct args_data args, const struct request_data request)
 {
     char outb [maxbuffer];
@@ -219,6 +212,7 @@ sock_write (fd, outbuff, doclen);
 return 1;
 } //send_redirect
 
+/*
 int Base64Encode(const unsigned char* buffer, size_t length, char **b64text) { //Encodes a binary safe base 64 string
 	BIO *bio, *b64;
 	BUF_MEM *bufferPtr;
@@ -238,7 +232,7 @@ int Base64Encode(const unsigned char* buffer, size_t length, char **b64text) { /
 
 	return (0); //success
 }
-
+*/
 
 void getwebsock (const struct request_data request)
 {
@@ -324,6 +318,7 @@ return rtn;
 
 int main (int argc, char **argv)
 {
+
 signal(SIGPIPE, SIG_IGN);
 struct args_data args;
 args.port = 9999;
@@ -350,6 +345,9 @@ strcpy (args.base_path, argv[i+1]);
 
 if (!strcmp (argv[i], "-editor"))
 strcpy (args.editor_path, argv[i+1]);
+
+if (!strcmp (argv[i], "-tls"))
+    {args.tls = 1; toggle_tls (1);}
 
 } // for args
 
@@ -398,7 +396,7 @@ while (1)
 {
 inbuff.len = sock_read (connfd, inbuff.p, inbuff.max);
 if (inbuff.len == -1)
-{ loggingf ("client timed out\n");  close (connfd); break; }
+{ loggingf ("client timed out (main-loop)\n");  close (connfd); break; }
 
 
 request = process_request (connfd, args, inbuff);
@@ -432,9 +430,11 @@ if (request.method == 'E' && request.mode == action)
 //    procint = post_action (request, inbuff);
 
 if (request.method == 'O' && request.mode == edit)
-	procint = put_edit (request);
-if (request.method == 'U' && request.mode == edit)
-	procint = put_edit (request);
+	{procint = put_edit (request); loggingf ("put file return: %d\n", procint);}
+
+
+//if (request.method == 'U' && request.mode == edit)
+//	procint = put_edit (request);
 
 if (request.method == 'O' && request.mode == upload)
 	procint = put_file (request);
@@ -789,8 +789,10 @@ return request;
 } // process_request
 
 
+
 int get_edit_file (const struct args_data args, const struct request_data request)
 {
+
 char outbuffer [maxbuffer];
 struct buffer_data outbuff;
 outbuff.p = outbuffer;
@@ -807,12 +809,11 @@ struct buffer_data filebuffer;
 filebuffer.p = fbuffer;
 filebuffer.max = maxbuffer;
 
-char bookmarks_path [string_sz];
-sprintf (bookmarks_path, "%s%s", request.fullpath, ".bmk");
-
-int bookmarksfd = open (bookmarks_path, O_RDONLY);
-if (bookmarksfd < 0)
-    loggingf ("no bookmarks to load\n");
+char bm [maxbuffer];
+struct buffer_data bmlist;
+bmlist.p = bm;
+bmlist.max = maxbuffer;
+bmlist.len = 0;
 
 int editorfd = open (args.editor_path, O_RDONLY);
 if (editorfd < 0)
@@ -830,173 +831,62 @@ filebuffer.len = read (filefd, filebuffer.p, filebuffer.max);
 close (editorfd);
 close (filefd);
 
-//make sure DELIMETER is below <!--bookmarks--> and process one after the other
+int linecount = 0;
+int d1 = 0, d2 = 0;
+char line [string_sz];
 
-if (bookmarksfd > 0)
-{
-char bookmb [string_sz * 2];
-buffer bookmarks_file;
-bookmarks_file.p = bookmb;
-bookmarks_file.len = 0;
-bookmarks_file.max = string_sz * 2;
-
-bookmarks_file.len = read (bookmarksfd, bookmarks_file.p, bookmarks_file.max);
-close (bookmarksfd);
-
-editorbuffer.procint = search (editorbuffer.p, "<!--bookmarks-->", 0, editorbuffer.len);
-if (editorbuffer.procint < 0)
-    {send_txt (request.fd, "failed to find bookmarks demimeter"); return -1;}
-     
-memcpy (outbuff.p, editorbuffer.p, editorbuffer.procint - 16);
-outbuff.len = editorbuffer.procint - 16;
-
-string entry;
-char name [nameholder];
-char place [10];
-
-char bookmbe [string_sz * 2];
-buffer bookmarks_entry;
-bookmarks_entry.p = bookmbe;
-bookmarks_entry.len = 0;
-bookmarks_entry.max = string_sz * 2;
-
-//bookmarks_file
-//bookmarks_entry
-
-buffcatf (&bookmarks_entry, "<select class=\"button\" onchange=\"bookmark(event)\">\n");
-int start = 0, end = 0;
+buffcatf (&bmlist, "<select onchange=bookmark (event)>\n");
+//strcpy (bmlist.p, "<select onchange=bookmark (event)>\n");
+//bmlist.len = strlen ("<select onchange=bookmark (event)>\n");
 
 while (1)
 {
-    end = getnext (bookmarks_file.p, 10, start, bookmarks_file.len);
-    if (end ==-1) break;
+d2 = getnext (editorbuffer.p, 10, d1 + 1, editorbuffer.len);
+if (d2 ==-1) break;
+++linecount;
+midstr (editorbuffer.p, line, d1, d2);
+int check = search (line, "// bm-", 0, d2 - d1);
+if (check > 0)
+{
+    char bm [nameholder]; // duplicate name, but encapsulation should be ok
+    midstr (line, bm, check, strlen (line) - check);
     
-    entry.len = midstr (bookmarks_file.p, entry.p, start, end);
-    
-    int d1 = getnext (entry.p, 32, 0, entry.len);
-    
-    midstr (entry.p, place, 0, d1);
-    midstr (entry.p, name, d1, entry.len);
-    
-    buffcatf (&bookmarks_entry, "<option value=\"%s\">%s</option>\n", place, name);
-    
-    start = end + 1;
+    buffcatf (&bmlist, "<option value=%d>%s</option>\n", linecount, bm);
+}// if bookmark
 
-} // while process bookmarks
-buffcatf (&bookmarks_entry, "</select>\n");
+d1 = d2;    
+} // loop 
+buffcatf (&bmlist, "</select>\n");
+// bm- new_code
 
+//<!--bookmarks-->
 
-memcpy (outbuff.p + outbuff.len, bookmarks_entry.p, bookmarks_entry.len);
-outbuff.len += bookmarks_entry.len;
- 
-} // if add bookmarks
-
-int oldproc = editorbuffer.procint;
-
-editorbuffer.procint = search (editorbuffer.p, "DELIMETER", editorbuffer.procint, editorbuffer.len);
+editorbuffer.procint = search (editorbuffer.p, "<!--bookmarks-->", 0, editorbuffer.len);
 if (editorbuffer.procint < 0)
-    {send_txt (request.fd, "failed to find main DELIMETER"); return -1;}
-     
-memcpy (outbuff.p + outbuff.len, editorbuffer.p + oldproc, editorbuffer.procint - oldproc - 9);
-outbuff.len += editorbuffer.procint - oldproc - 9;
+    {send_txt (request.fd, "failed to find !--bookmarks"); return -1;}
 
-//send_txt(request.fd, outbuff.p);
-//exit (0);
-//return 1;
+memcpy (outbuff.p, editorbuffer.p, editorbuffer.procint);
+outbuff.len = editorbuffer.procint;
 
-for (int i = 0; i < filebuffer.len; ++i)
-{
-if (filebuffer.p [i] == '<')
-{
-outbuff.p [outbuff.len] = '&';
-outbuff.p [outbuff.len + 1] = 'l';
-outbuff.p [outbuff.len + 2] = 't';
-outbuff.p [outbuff.len + 3] = ';';
-outbuff.len += 4;
-continue;
-} // if
+memcpy (outbuff.p + outbuff.len, bmlist.p, bmlist.len);
+outbuff.len += bmlist.len;
 
-if (filebuffer.p [i] == '>')
-{
-outbuff.p [outbuff.len] = '&';
-outbuff.p [outbuff.len + 1] = 'g';
-outbuff.p [outbuff.len + 2] = 't';
-outbuff.p [outbuff.len + 3] = ';';
-outbuff.len += 4;
-continue;
-} // if
+int oldprocint = editorbuffer.procint;
 
-outbuff.p [outbuff.len] = filebuffer.p [i];
-++outbuff.len;
-} // for
-
-//send_txt(request.fd, outbuff.p);
-//exit (0);
-//return 1;
-
-memcpy (outbuff.p + outbuff.len, editorbuffer.p + editorbuffer.procint, editorbuffer.len - editorbuffer.procint);
-
-outbuff.len += editorbuffer.len - editorbuffer.procint;
-
-struct string_data head;
-head.len = sprintf (head.p, "%s%s%s%d\n\n", hthead, conthtml, contlen, outbuff.len);
-
-loggingf ("%d bytes: edit file served\n", outbuff.len);
-
-sock_writeold (request.fd, head.p, head.len);
-sock_buffwrite (request.fd, &outbuff);
-//return assets + 1;
-return 4;
-
-} // get_edit_file
-
-/*
-int get_edit_file (const struct args_data args, const struct request_data request)
-{
-
-char outbuffer [maxbuffer];
-struct buffer_data outbuff;
-outbuff.p = outbuffer;
-outbuff.max = (maxbuffer);
-outbuff.len = 0;
-
-char ebuffer [maxbuffer];
-struct buffer_data editorbuffer;
-editorbuffer.p = ebuffer;
-editorbuffer.max = maxbuffer;
-
-char fbuffer [maxbuffer];
-struct buffer_data filebuffer;
-filebuffer.p = fbuffer;
-filebuffer.max = maxbuffer;
-
-
-int editorfd = open (args.editor_path, O_RDONLY);
-if (editorfd < 0)
-    {send_txt (request.fd, "bad editor"); return -1;}
-
-int filefd = open (request.fullpath, O_RDONLY);
-if (filefd < 0)
-    {send_txt (request.fd, "bad file name"); return -1;}
-
-editorbuffer.len = read (editorfd, editorbuffer.p, editorbuffer.max);
-filebuffer.len = read (filefd, filebuffer.p, filebuffer.max);
-
-//int assets = countassets (editorbuffer);
-
-close (editorfd);
-close (filefd);
-
-//editorbuffer.procint = strsearch (editorbuffer.p, "DELIMETER", 0, editorbuffer.len);
 editorbuffer.procint = search (editorbuffer.p, "DELIMETER", 0, editorbuffer.len);
 if (editorbuffer.procint < 0)
     {send_txt (request.fd, "failed to find DELIMETER"); return -1;}
 
-for (int i = 0; i < (editorbuffer.procint - 9); ++i)
-{
-outbuff.p [outbuff.len] = editorbuffer.p [i];
-++outbuff.len;
-} // for
+memcpy (outbuff.p + outbuff.len, editorbuffer.p + oldprocint, editorbuffer.procint - oldprocint - 9);
+outbuff.len += editorbuffer.procint - oldprocint - 9;
+
+//for (int i = 0; i < (editorbuffer.procint - 9); ++i)
+//{
+//outbuff.p [outbuff.len] = editorbuffer.p [i];
+//++outbuff.len;
+//} // for
+
+// commence file parsing
 
 for (int i = 0; i < filebuffer.len; ++i)
 {
@@ -1033,6 +923,9 @@ outbuff.p [outbuff.len] = editorbuffer.p [i];
 struct string_data head;
 head.len = sprintf (head.p, "%s%s%s%d\n\n", hthead, conthtml, contlen, outbuff.len);
 
+save_buffer (bmlist, "bmlist.txt");
+save_buffer (outbuff, "outbuff.txt");
+
 loggingf ("%d bytes: edit file served\n", outbuff.len);
 
 sock_writeold (request.fd, head.p, head.len);
@@ -1040,7 +933,7 @@ sock_buffwrite (request.fd, &outbuff);
 //return assets + 1;
 return 4;
 } // get_edit_file
-*/
+
 
 int put_edit (const struct request_data request)
 {
@@ -1121,7 +1014,22 @@ filedata.p[filedata.len] = json.p[i];
 ++filedata.len;
 } // for
 
+char backup [string_sz];
+strcpy (backup, "old/");
+strcat (backup, request.resourcename);
+strcat (backup, "-%m%d%H%M");
+strcat (backup, request.ext);
 
+time_t t;
+struct tm *tmp;
+t = time(NULL); 
+tmp = localtime(&t);
+if (tmp == NULL) { perror("localtime"); exit(EXIT_FAILURE); } 
+char outstr [string_sz];
+if (strftime(outstr, sizeof(outstr), backup, tmp) == 0) 
+{ fprintf(stderr, "strftime returned 0"); exit(EXIT_FAILURE); } 
+
+rename (request.fullpath, outstr);
 
 int localfd = open (request.fullpath, O_WRONLY | O_TRUNC| O_CREAT, S_IRUSR | S_IWUSR);
 write (localfd, filedata.p + 1, filedata.len - 2);
@@ -1192,63 +1100,6 @@ void safe_fname (const struct request_data request, const char *fname, char *rtn
  }// while
 }// safe_fname
 
-/*
-int process_newfile (ubuffer *inbuff, const struct request_data request, const int safename, int *filenum, int *fsize, string *fdata)
-{
-loggingf ("proc new overhang: %d\n", inbuff->procint);
-
-char temp1 [nameholder];
-char fullpath [string_sz];
-while (1)
-{ // loop through possible multiplefiles
-int d1 = 0;
-	
-if (inbuff->procint == 0)
-d1 = usearch (inbuff->p, "filename=\"", 0, inbuff->len);
-else	
-d1 = usearch (inbuff->p, "filename=\"", inbuff->len - inbuff->procint, inbuff->len);
-
-
-
-if (d1==-1) {loggingf ("no filename: 1035\n"); return -1;}
-int d2 = ugetnext (inbuff->p, '\"', d1 + 1, inbuff->len);
-
-umidstr (inbuff->p, temp1, d1, d2);
-loggingf ("new file name found: %s\n", temp1);
-
-if (safename) safe_fname (request, temp1, fullpath);
-else sprintf (fullpath, "%s/%s", request.fullpath, temp1);
-loggingf ("fullpath: %s\n", fullpath);
-
-int localfd = open (fullpath, O_WRONLY | O_TRUNC| O_CREAT, S_IRUSR | S_IWUSR);
-if (localfd ==-1) {loggingf ("error 1044\n"); exit(0);}
-
-*fsize = get_nextsize (fdata);
-loggingf ("fsize: %d\n", *fsize);
-*filenum += 1;
-int startdata = ugetnext (inbuff->p, '\n', d2 + 3, inbuff->len);
-startdata += 3;
-
-int leftover = inbuff->len - startdata;
-
-if (*fsize <= leftover)
-{
-loggingf ("fsize contained within remaining frame, looping for more files 1057\n");
-write (localfd, inbuff->p + startdata, *fsize);
-close (localfd);
-
-inbuff->procint = leftover;
-}else{ // if small
-printf ("1066 fsize spans frames exiting proc_newfile\n");
-write (localfd, inbuff->p + startdata, inbuff->len - startdata);
-inbuff->procint = inbuff->len - startdata;
-return localfd;
-}	// if big fsize
-} // loop
-return -1;
-} // process new file
-*/
-
 int put_file (const struct request_data request)
 {
 loggingf ("put_file commence\n");
@@ -1259,9 +1110,13 @@ string fdata;
 fdata.len =-1;
 fdata.procint = 0;
 
-//string strtmp;
+buffer audit;
+char ab[maxbuffer];
+audit.p = ab;
+audit.len = 0;
+audit.max = maxbuffer;
 
-//char temp1 [nameholder], temp2 [nameholder];
+
 int filecount = 0, filenum = 0;
 int fsize = 0, read_progress = 0;
 int file_progress = 0;
@@ -1273,7 +1128,6 @@ int startdata = 0, enddata = 0;
 char fname [nameholder];
 char fullpath [string_sz];
 int d1 = 0, d2 = 0;
-char sfsize [nameholder];
 read_progress = request.mainbuff->len - request.procint + request.codelen + 2;	
 loggingf ("data started in first xmission: %d / %l\n", read_progress, request.content_len);
 //find second boundary, place into d1
@@ -1283,46 +1137,60 @@ d1 = getnext(request.mainbuff->p, '\"', request.procint, request.mainbuff->len);
 d1 = getnext(request.mainbuff->p, '\"', d1 +1, request.mainbuff->len);
 // attempt to find end of data
 d2 = getnext(request.mainbuff->p, 10, d1 +5, request.mainbuff->len);
-if (d2==-1) {loggingf ("mainbuff proc fdata started and spans 1114\n"); fdata.len=0; d2 = request.mainbuff->len;}
-else loggingf ("fdata fully contained\n");
+
+// for diagnostic purposes
+buffcatf (&audit, "mainbuff->\n", request.mainbuff->p);
+
+// diagnostics
+if (d2==-1)
+{
+//loggingf ("mainbuff proc fdata started and spans 1114\n");
+fdata.len=0;
+d2 = request.mainbuff->len;
+
+buffcatf (&audit, "fdata spans from mainbuff:\n");
+}
+else buffcatf (&audit, "fdata fully containedin mainbuff:\n");
+
 
 midstr (request.mainbuff->p, fdata.p, d1 +1, d2);
 enddata = d2;
-//loggingf ("fdata: %s\n", fdata.p);
+buffcatf (&audit, "1264 initial fdata: %s\n", fdata.p);
 
 if (fdata.len ==-1) // not started at all - fully constained in mainbuff
 {
-loggingf ("complete fdata in first xmission\n");
+buffcatf (&audit, "complete fdata in first xmission\n");
+char sfsize [nameholder];
 
 ftrim (fdata.p);
 fdata.len = rtrim (fdata.p);
-loggingf ("fdata trim: %s len: %d\n", fdata.p, fdata.len);
+buffcatf (&audit, "fdata trim: %s len: %d\n", fdata.p, fdata.len);
 fdata.procint = getnext (fdata.p, ':', 0, fdata.len);
 midstr (fdata.p, sfsize, 0, fdata.procint);
-loggingf ("filecount: %s\n", sfsize);
+buffcatf (&audit, "1275 (mainbuff): str_filecount: %s\n", sfsize);
 filecount = atoi (sfsize);
 
-loggingf ("file count %d\n", filecount);
+buffcatf (&audit, "1278 (mainbuff) int_file count %d\n", filecount);
 } // if complete fdata in first xmission
-else if (fdata.len == 0) {printf ("fdata spans buffer reads trigger 1132\n");goto multi;}
+else if (fdata.len == 0) {buffcatf (&audit, "fdata spans buffer reads trigger 1132\n");goto multi;}
 
-loggingf ("endata: %d bufflen: %d\n", enddata, request.mainbuff->len);
+buffcatf (&audit, "endata: %d bufflen: %d\n", enddata, request.mainbuff->len);
 if (enddata < request.mainbuff->len)
 {
-loggingf ("additional data may be started in first xmission\n");
+buffcatf (&audit, "additional data may be started in first xmission\n");
 //d1 = search (request.mainbuff->p, request.code, enddata, request.mainbuff->len);
 //	if (d1==-1) {loggingf ("search error 1118\n"); exit (0);}
 
 d1 = search (request.mainbuff->p, "filename=\"", enddata, request.mainbuff->len);
-	if (d1==-1) {loggingf ("1145, no files in first xmission, data within next xmission\n"); goto multi;}
+	if (d1==-1) {buffcatf (&audit, "1290, no files in first xmission, data within next xmission\n"); goto multi;}
 d2 = getnext (request.mainbuff->p, '\"', d1 + 1, request.mainbuff->len);
-	if (d2==-1) {loggingf ("search error 1147\n"); exit (0);}
+	if (d2==-1) {loggingf ("search error 1292\n"); exit (0);}
 
 midstr (request.mainbuff->p, fname, d1, d2);
-loggingf ("fname: %s\n", fname);
+buffcatf (&audit, "fname: %s\n", fname);
 
 startdata = getnext (request.mainbuff->p, '\n', d2 + 4, request.mainbuff->len);
-	if (startdata ==-1) {loggingf ("error 1153\n"); exit (0);}
+	if (startdata ==-1) {loggingf ("error 1298\n"); exit (0);}
 startdata += 3;
 
 if (safename) safe_fname (request, fname, fullpath);
@@ -1332,7 +1200,7 @@ localfd = open (fullpath, O_WRONLY | O_TRUNC| O_CREAT, S_IRUSR | S_IWUSR);
 	if (localfd ==-1) {loggingf ("error 1160\n"); exit(0);}
 filenum = 1;
 fsize = get_nextsize (&fdata);
-loggingf ("file opened: %s, %d: bytes\n", fullpath, fsize);
+buffcatf (&audit, "file opened: %s, %d: bytes\n", fullpath, fsize);
 
 
 // if fsize smaller than remaining buffer
@@ -1354,7 +1222,7 @@ return 1;} // if no more files and all data transmitted in single xmission
 enddata = request.mainbuff->len - startdata;
 write (localfd, request.mainbuff->p + startdata, enddata);
 file_progress = enddata;
-loggingf ("first file started in main, spans frames, %d\n", file_progress);
+buffcatf (&audit, "first file started in main, spans frames, %d\n", file_progress);
 
     
 } // if file single / multi reciever 
@@ -1377,7 +1245,7 @@ inbuff.procint = 0;
 // first check that fdata is completed
 if (fdata.len == 0 || fdata.len == -1)
 {
-loggingf ("fdata incomplete\n");
+buffcatf (&audit, "fdata incomplete\n");
 int startdata = 0, enddata = 0;
 char temp1 [nameholder];
 
@@ -1387,7 +1255,7 @@ read_progress += inbuff.len;
 
 if (fdata.len == -1)
 {
-loggingf ("fdata not started at all\n");
+buffcatf (&audit, "fdata not started at all\n");
 startdata = usearch (inbuff.p, "name=\"fsize\"", 0, inbuff.len);
 if (startdata==-1) {printf ("error locating fdata 1240"); exit (0);}
 startdata += 3;
@@ -1401,16 +1269,17 @@ umidstr (inbuff.p, fdata.p, startdata, enddata);
 
 ftrim (fdata.p);
 fdata.len = rtrim (fdata.p);
-loggingf ("1235 fdata: %s, len: %d\n", fdata.p, fdata.len);
+buffcatf (&audit, "1235 fdata: %s, len: %d\n", fdata.p, fdata.len);
 
 fdata.procint = getnext (fdata.p, ':', 0, fdata.len);
 
 midstr (fdata.p, temp1, 0, fdata.procint);
-
+buffcatf (&audit, "str filecount: %s\n", temp1);
 filecount = atoi (temp1);
-loggingf ("1267 filecount: %d\n", filecount);
+buffcatf (&audit, "last iteration filecount: %d\n", filecount);
 } // if fdata incomplete
 
+save_buffer (audit, "auditbuffer.txt");
 
 // file reads now
 // do subsequent reads here
@@ -1425,13 +1294,8 @@ if (startdata ==-1) {inbuff.procint = 0; continue;}
 
 int enddata = ugetnext (inbuff.p, '\"', startdata +1, inbuff.len);
 if (enddata ==1)
-{
-char t [100];
+{loggingf ("not sure how this happened:\n"); exit (0);}
 
-umidstr (inbuff.p, t, startdata - 9, startdata + 20);
-    loggingf ("not sure how this happened: %s\n", t);
-    exit (0);
-}
 char fname [nameholder];
 umidstr (inbuff.p, fname, startdata, enddata);
 
@@ -1469,8 +1333,12 @@ inbuff.procint = 0;
 } // if data remains in buff
 
 inbuff.len = usock_read (request.fd, inbuff.p, inbuff.max);
-if (inbuff.len ==-1){loggingf ("client timed out\n"); return -1;}
+if (inbuff.len ==-1){loggingf ("client timed out 1441\n"); return -1;}
 read_progress += inbuff.len;
+
+
+
+// if file already open
 if (localfd > 0)
 {
 write (localfd, inbuff.p, inbuff.len);
@@ -1484,7 +1352,19 @@ close (localfd);
 localfd =-1;
 
 int leftover = file_progress - fsize;
-inbuff.procint = inbuff.len - leftover;
+int offset = inbuff.len - leftover;
+
+memmove (inbuff.p, inbuff.p + offset, inbuff.len - offset);
+
+int newin = usock_read (request.fd, inbuff.p + offset, inbuff.max - offset);
+if (newin == -1) {loggingf ("newin read timeout\n"); return -1;}
+// a bit sloppy here....
+// needs future reivision
+inbuff.len += newin;
+
+inbuff.procint = 1;
+
+//inbuff.procint = inbuff.len - leftover;
 
 continue;
 } // if file done
