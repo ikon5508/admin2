@@ -346,8 +346,6 @@ strcpy (args.base_path, argv[i+1]);
 if (!strcmp (argv[i], "-editor"))
 strcpy (args.editor_path, argv[i+1]);
 
-if (!strcmp (argv[i], "-tls"))
-    {args.tls = 1; toggle_tls (1);}
 
 } // for args
 
@@ -643,7 +641,7 @@ loggingf ("%d bytes: %s", size, mime_txt);
 
 sock_writeold (request.fd, outbuff.p, outbuff.len);
 
-return sendfile (request.fullpath, request.fd);
+return send_file (request.fullpath, request.fd);
 //return 1;
 
 } // serv_file`
@@ -1081,7 +1079,7 @@ stat ("favicon.ico", &finfo);
 outbuff.len = sprintf (outbuff.p, "%s%s%s%ld\n\n", hthead,  conticon, contlen, finfo.st_size);
 sock_writeold (fd, outbuff.p, outbuff.len);
 
-sendfile ("favicon.ico", fd);
+send_file ("favicon.ico", fd);
 return 1;
 } // servico
 

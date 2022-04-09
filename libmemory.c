@@ -446,7 +446,7 @@ close (locfd);
 return 1;
 } // sendfileM
 
-int sendfile (const char *path, const int fd)
+int send_file (const char *path, const int fd)
 {
 int locfd = open (path, O_RDONLY);
 if (locfd < -1)
