@@ -1,4 +1,5 @@
 #include "libmemory.h"
+#include <poll.h>
 
 const int timeout = 3;
 
@@ -446,6 +447,69 @@ close (locfd);
 return 1;
 } // sendfileM
 
+
+int send_file (const char *path, const int fd)
+{
+int locfd = open (path, O_RDONLY);
+if (locfd < -1)
+    return -1;
+
+struct stat finfo;
+fstat (locfd, &finfo);
+
+size_t read_progress = 0;
+
+size_t write_progress = 0;
+
+size_t fsize = finfo.st_size;
+//loggingf (200, "file size: %d\n", fsize);
+
+char c_fbuffer [sendfileunit];
+struct buffer_data fbuff;
+fbuff.p = c_fbuffer;
+fbuff.max = sendfileunit;
+
+struct pollfd ev;
+ev.fd = fd;
+ev.events = POLLOUT;
+
+while (read_progress < fsize)
+{  
+fbuff.len = read (locfd, fbuff.p, fbuff.max);
+read_progress += fbuff.len;
+
+int prtn = poll (&ev, 1, 3000);
+if (prtn == 0 || prtn == -1) return -1;
+ev.revents = 0;
+int interim_progress = write (fd, fbuff.p, fbuff.len);
+if (interim_progress == -1)
+	return -1;
+
+int cpylen = interim_progress;
+while (cpylen < fbuff.len)
+{
+	//int cpylen = fbuff.len - interim_progress;
+//for (int i = interim_progress; i < fbuff.len; ++i)
+//fbuff.p [i - interim_progress] = fbuff.p [i];
+//fbuff.p += interim_progress; // doesnt work
+//memmove (fbuff.p, fbuff.p + interim_progress, cpylen);
+//fbuff.len = cpylen;
+prtn = poll (&ev, 1, 3000);
+if (prtn == 0 || prtn == -1) return -1;
+ev.revents = 0;
+
+interim_progress = write (fd, fbuff.p + cpylen, fbuff.len - cpylen);
+if (interim_progress == -1)
+	return -1;
+cpylen += interim_progress;
+} // while
+
+} // while loop
+close (locfd);
+return 1;
+} // sendfile
+
+/*
 int send_file (const char *path, const int fd)
 {
 int locfd = open (path, O_RDONLY);
@@ -497,7 +561,7 @@ cpylen += interim_progress;
 close (locfd);
 return 1;
 } // sendfile
-
+*/
 
 
 int sock_setnonblock (const int fd)
