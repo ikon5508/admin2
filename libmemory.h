@@ -16,7 +16,7 @@
 #include <netdb.h>
 
 
-#define sendfileunit 500
+#define sendfileunit 100000
 #define maxbuffer 100000
 #define nameholder 100
 #define string_sz 1000
