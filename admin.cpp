@@ -2,8 +2,132 @@
 #include <signal.h>
 #include <openssl/sha.h>
 
+#include <poll.h>
+const int timeout = 3;
+
+//int bdcount = 1;
+//int fd = 0;
+//int printfon = 1;
+
+//int backdoor = 0;
+//int backdoorfd = 0;
+//char bd[nameholder];
+
+void err_ctl (const int rslt, const char *msg) {
+if (rslt < 0) {
+printf ("%s\n", msg);
+exit(0);
+}
+} //err_ctl
+
+
+void killme (const char *msg) {
+// bm killme
+printf ("%s\n", msg);
+exit(0);
+} //killme
+
+
+char *parse_line (char *dest, const char *src)
+{ // bm parse_line 
+   char *rtn = (char *) strchr (src, 10);
+    if (rtn == NULL) return NULL;
+   
+   
+   int len = rtn - src;
+    
+    memcpy (dest, src, len);
+    
+    dest [len] = 0;
+    
+    return rtn +1;
+ 
+} // parse_line
+
+int split_value (char *src, const char d, char *value)
+{ // bm split_value
+char *p1 = strchr (src, (int) d);
+if (p1 == NULL) return 0;
+
+int len = strlen (src);
+
+
+int d1 = p1 - src;
+//memset (value, 0, valsz);
+memcpy (value, src + d1 +1, len - d1 -1);
+value [len - d1 -1] = 0;
+src[d1] = 0;
+
+
+
+return 1;
+} // parse value
+
+void trim (char *totrim)
+{ // bm void trim
+int len = strlen (totrim);
+
+//trim beginning
+int count = 0;
+for (int i = 0; i !=len; ++i)
+{
+int trigger = 0;
+switch (totrim[i])
+{
+case 10: 
+++count;
+break;
+case 13:
+++count;
+break;
+case 32:
+++count;
+break;
+  
+default:
+goto fin1;
+  
+} // switch
+} // for
+    
+fin1:;
+if (count)
+{
+memmove (totrim, totrim + count, len - count);
+totrim [len - count] = 0;  // works partially
+//memset (totrim + len - count, 0, count);
+len -= count;
+///printf ("trimming %d\n", count);
+}
+
+// trim end
+for (int i = len -1; i > 0; --i)
+{
+// printf ("i: %d (%c - <%d>)\n", i, totrim[i], totrim[i]);
+switch (totrim[i])
+{
+case 10: 
+totrim[i] = 0;
+break;
+case 13:
+totrim[i] = 0;
+break;
+case 32:
+totrim[i] = 0;
+break;
+
+default:
+i = 0;
+} // switch
+} // for
+} // trim
+
+
+
+
 int get_action (const struct args_data args, const struct request_data request)
 {
+// bm getaction    
     char outb [maxbuffer];
 struct buffer_data out;
 out.p = outb;
@@ -21,6 +145,14 @@ if (strcmp(request.ext, ".c") == 0)
 
 if (strcmp(request.ext, ".h") == 0)
 		viewtype = txt;
+
+if (strcmp(request.ext, ".cpp") == 0)
+		viewtype = txt;
+
+if (strcmp(request.ext, ".hpp") == 0)
+		viewtype = txt;
+
+
 
 if (strcmp(request.ext, ".htm") == 0)
 		viewtype = txt;
@@ -101,7 +233,7 @@ if (viewtype == img)
 
 if (viewtype == txt)
 {
-    loggingf ("generating text preview\n");
+    printf ("generating text preview\n");
 int localfd = open (request.fullpath, O_RDONLY);
 if (localfd == -1)
 	goto skip;
@@ -171,7 +303,8 @@ return 1;
 
 int post_action (const struct request_data request, const struct buffer_data inbuff)
 {
-loggingf ("%s\n", inbuff.p);
+// bm post action
+printf ("%s\n", inbuff.p);
 send_txt (request.fd, "recieved");
 exit (0);
 return 1;
@@ -299,7 +432,7 @@ printf ("len: %d\n", inbuff.len);
 */
 } // websock
 
-int get_nextsize (string *fdata)
+int get_nextsize (struct string_data *fdata)
 {
 int n = getnext (fdata->p, ':', fdata->procint + 1, fdata->len);
 if (n ==-1) n = fdata->len;
@@ -317,7 +450,7 @@ return rtn;
 }
 
 int main (int argc, char **argv)
-{
+{ // bm main top
 
 signal(SIGPIPE, SIG_IGN);
 struct args_data args;
@@ -330,12 +463,6 @@ strcpy (args.editor_path, "aceeditor.htm");
 for (int i = 1; i < argc; ++i)
 {
 
-if (!strcmp (argv[i], "-sb"))
-{init_sockbackdoor(3, argv[i + 1]);}
-
-if (!strcmp (argv[i], "-bd"))
-init_sockbackdoor (2, argv[i+1]);
-
 if (!strcmp (argv[i], "-p"))
 args.port = atoi (argv[i+1]);
 
@@ -346,22 +473,14 @@ strcpy (args.base_path, argv[i+1]);
 if (!strcmp (argv[i], "-editor"))
 strcpy (args.editor_path, argv[i+1]);
 
-
 } // for args
-
-
-init_log ("log.txt");
 
 struct sockaddr_in address;
 socklen_t addrlen = sizeof(address);
 
-int servfd;
-if (backdoor !=3)
-servfd = prepsocket (args.port);
+int servfd = prepsocket (args.port);
 
-
-loggingf ("admin load\nPort: %d\nPath: %s\nEditor: %s\n", args.port, args.base_path, args.editor_path);
-
+printf ("admin load\nPort: %d\nPath: %s\nEditor: %s\n", args.port, args.base_path, args.editor_path);
 
 char inbuffer [string_sz];
 struct buffer_data inbuff;
@@ -372,18 +491,15 @@ inbuff.max = (string_sz);
 while (1)
 {
 struct request_data request;
-loggingf ("waiting\n");
+printf ("waiting\n");
 
 int connfd = 0;
-if (backdoor != 3)
-{
 connfd = accept(servfd, (struct sockaddr *)&address, (socklen_t*)&addrlen);
 sock_setnonblock (connfd);
 
 char str[INET_ADDRSTRLEN];
   inet_ntop(address.sin_family, &address.sin_addr, str, INET_ADDRSTRLEN);
 printf("new connection from %s:%d\n", str, ntohs(address.sin_port));
-} // if sandbox skip
 
 // keep alive loop
 int kacount = 1;
@@ -394,16 +510,16 @@ while (1)
 {
 inbuff.len = sock_read (connfd, inbuff.p, inbuff.max);
 if (inbuff.len == -1)
-{ loggingf ("client timed out (main-loop)\n");  close (connfd); break; }
+{ printf ("client timed out (main-loop)\n");  close (connfd); break; }
 
 
 request = process_request (connfd, args, inbuff);
 request.mainbuff = &inbuff;
 
 
-(request.method == 'E')?
-loggingf ("GET: %s\n", request.uri):
-loggingf ("POST: %s\n", request.uri);
+(request.method == 'G')?
+printf ("GET: %s\n", request.uri):
+printf ("POST: %s\n", request.uri);
 
 if (request.mode == websock)
 	{getwebsock (request); exit (0);}
@@ -411,33 +527,33 @@ if (request.mode == websock)
 if (request.mode == root)
 	send_redirect (connfd, "/file");
 
-if (request.method == 'E' && request.mode == edit)
+if (request.method == 'G' && request.mode == edit)
     procint = get_edit_file (args, request);
 
-if (request.method == 'E' && request.mode == config)
+if (request.method == 'G' && request.mode == config)
     procint = get_config (args, request);
 
-if (request.method == 'E' && request.mode == file)
+if (request.method == 'G' && request.mode == file)
              procint = get_file (args, request);
              
-if (request.method == 'E' && request.mode == action)
+if (request.method == 'G' && request.mode == action)
     procint = get_action (args, request);
 
 
 //if (request.method == 'O' && request.mode == action)
 //    procint = post_action (request, inbuff);
 
-if (request.method == 'O' && request.mode == edit)
-	{procint = put_edit (request); loggingf ("put file return: %d\n", procint);}
+if (request.method == 'P' && request.mode == edit)
+	{procint = put_edit (request); printf ("put file return: %d\n", procint);}
 
 
 //if (request.method == 'U' && request.mode == edit)
 //	procint = put_edit (request);
 
-if (request.method == 'O' && request.mode == upload)
-	procint = put_file (request);
-if (request.method == 'U' && request.mode == upload)
-	procint = put_file (request);
+//if (request.method == 'O' && request.mode == upload)
+//	procint = put_file (request);
+//if (request.method == 'U' && request.mode == upload)
+//	procint = put_file (request);
 
 if (request.mode == favicon)
 	servico (connfd);
@@ -526,7 +642,7 @@ if (ep->d_name[0] == '.')
 	continue;
 	
 // 4 is dir 8 is file
-//loggingf ("dir: %s\n", ep->d_name);
+//printf ("dir: %s\n", ep->d_name);
 
 if (ep->d_type == 4)
 
@@ -534,7 +650,7 @@ if (ep->d_type == 4)
 buffcatf (&out, "<a href=\"%s%s\">%s/</a><br>\n", request.uri, ep->d_name, ep->d_name):
 buffcatf (&out, "<a href=\"%s/%s\">%s/</a><br>\n", request.uri, ep->d_name, ep->d_name);
 
-//loggingf ("char: %c, dirname is: %s\n", request.uri[strlen (request.uri) - 1], request.uri.p);
+//printf ("char: %c, dirname is: %s\n", request.uri[strlen (request.uri) - 1], request.uri.p);
 } // while
 
 closedir (dp);
@@ -569,7 +685,7 @@ buffcatf (&out, "</body>\n</html>");
 // save page
 save_buffer (out, "dir.htm");
 //savepage
-loggingf ("%d: bytes directory info\n", out.len);
+printf ("%d: bytes directory info\n", out.len);
 struct string_data head;
 
 head.len = sprintf (head.p, "%s%s%s%d\n\n", hthead, conthtml, contlen, out.len);
@@ -630,14 +746,14 @@ if (strcmp(mime_ext, ".mp4") == 0)
 if (i == 0)
 {mime_txt = conttxt;}
 
-//loggingf ("%s\n", mime_txt);
+//printf ("%s\n", mime_txt);
 
 //struct stat finfo;
 //stat (request.fullpath, &finfo);
 
 outbuff.len = sprintf (outbuff.p, "%s%s%s%ld\n\n", hthead, mime_txt, contlen, size);
 
-loggingf ("%d bytes: %s", size, mime_txt);
+printf ("%ld bytes: %s", size, mime_txt);
 
 sock_writeold (request.fd, outbuff.p, outbuff.len);
 
@@ -664,11 +780,11 @@ return 0;
 } //get_file
 
 struct request_data process_request (const int fd, const struct args_data args, const struct buffer_data inbuff)
-{
+{ // bm process_request
 struct request_data request;
 memset (&request, 0, sizeof (request));
 
-request.method = inbuff.p [1];
+request.method = inbuff.p [0];
 request.fd = fd;
 
 int d1 = getnext (inbuff.p, 32, 0, inbuff.len);
@@ -680,6 +796,15 @@ int procint = d2 - d1;
 if (procint ==-1) exit (0); // catch potential seg fault when kill signal sent
 
 strncpy (request.uri, inbuff.p + d1, procint);
+// get URI old way
+
+const char *hello = "hello this is a test";
+std::string str = hello;
+//str.assign (hello);
+
+
+
+
 
 d1 = getlast (request.uri, '/', procint); 
 strncpy (request.resourcename, request.uri + d1 +1, procint - d1 -1);
@@ -728,16 +853,16 @@ request.mode = upload;
 strncpy (request.path, request.uri + d1, strlen (request.uri) - d1);
 } // if file
 
-d1 = search (request.uri, "/websock", 0, 8);
-if (d1 > 0)
-{
-request.mode = websock;
+//d1 = search (request.uri, "/websock", 0, 8);
+//if (d1 > 0)
+//{
+//request.mode = websock;
 //d1 = search (inbuff.p, "Sec-WebSocket-Accept: ", d1, inbuff.len);
-} // if websock
+//} // if websock
 
 sprintf (request.fullpath, "%s%s", args.base_path, request.path);
 
-if (request.method == 'E')
+if (request.method == 'G')
 	return (request);
 
 char temp [100] = "";
@@ -747,7 +872,7 @@ if (d1 ==-1) {send_txt (fd, "error ength: "); request.procint = -1; return reque
 d2 = getnext (inbuff.p, 10, d1, inbuff.len);
 if (d2 ==-1) {send_txt (fd, "error end (669)"); request.procint = -1; return request;}
 midstr (inbuff.p, temp, d1, d2);
-rtrim (temp);
+trim (temp);
 request.content_len = atoi (temp);
 
 d1 = search (inbuff.p, "gent: ", rear, inbuff.len);
@@ -764,13 +889,15 @@ return request;
 
 if (request.mode == upload)
 {
-loggingf ("put file processed in proc\n");
+printf ("put file processed in proc\n");
 d1 = search (inbuff.p, "boundary=", rear, inbuff.len);
-if (d1 ==-1) {loggingf ("error boundary: "); request.procint = -1; return request;}
+if (d1 ==-1) {printf ("error boundary: "); request.procint = -1; return request;}
 d2 = getnext (inbuff.p, 10, d1, inbuff.len);
-if (d2 ==-1) {loggingf ("error end (694)"); request.procint = -1; return request;}
+if (d2 ==-1) {printf ("error end (694)"); request.procint = -1; return request;}
 midstr (inbuff.p, request.code, d1, d2);
-request.codelen = rtrim (request.code);
+trim (request.code);
+
+request.codelen = strlen (request.code);
 
 request.procint = search (inbuff.p, request.code, d2, inbuff.len);
 //request.procpnt = strstr (inbuff.p + d2, request.code);
@@ -840,17 +967,17 @@ buffcatf (&bmlist, "<select class=\"button\" onchange=\"bookmark(event)\">\n");
 while (1)
 {
 d2 = getnext (filebuffer.p, (int) '\n', d1 + 1, filebuffer.len);
-if (d2 ==-1) { /*loggingf ("lc: %d, break!!!\n", linecount);*/ break;}
+if (d2 ==-1) { /*printf ("lc: %d, break!!!\n", linecount);*/ break;}
 ++linecount;
 midstr (filebuffer.p, line, d1, d2);
-//loggingf ("line: %s\n", line);
+//printf ("line: %s\n", line);
 int check = search (line, "// bm-", 0, d2 - d1);
 if (check > 0)
 {
- loggingf ("match!!!\n");
+ printf ("match!!!\n");
     char bm [nameholder]; // duplicate name, but encapsulation should be ok
     midstr (line, bm, check, strlen (line));
-    loggingf ("bookmark: %s\n", bm);
+    printf ("bookmark: %s\n", bm);
     buffcatf (&bmlist, "<option value=\"%d\">%s</option>\n", linecount, bm);
 }// if bookmark
 
@@ -923,10 +1050,7 @@ outbuff.p [outbuff.len] = editorbuffer.p [i];
 struct string_data head;
 head.len = sprintf (head.p, "%s%s%s%d\n\n", hthead, conthtml, contlen, outbuff.len);
 
-save_buffer (bmlist, "bmlist.txt");
-save_buffer (outbuff, "outbuff.txt");
-
-loggingf ("%d bytes: edit file served\n", outbuff.len);
+printf ("%d bytes: edit file served\n", outbuff.len);
 
 sock_writeold (request.fd, head.p, head.len);
 sock_buffwrite (request.fd, &outbuff);
@@ -937,7 +1061,7 @@ return 4;
 
 int put_edit (const struct request_data request)
 {
-loggingf ("put edit commence\n");
+printf ("put edit commence\n");
 
 
 struct buffer_data inbuff;
@@ -951,8 +1075,7 @@ filedata.max = maxbuffer;
 filedata.p = fd;
 filedata.len = 0;
 
-struct buffer_data json;
-char js [maxbuffer];
+struct buffer_data json;char js [maxbuffer];
 json.max = maxbuffer;
 json.p = js;
 json.len = 0;
@@ -961,26 +1084,26 @@ int progress = 0;
 
 if (request.procint > 0)
 {
-loggingf ("data started in first xmission\n");
+printf ("data started in first xmission\n");
 memcpy (json.p, request.mainbuff->p + request.procint, request.mainbuff->len - request.procint);
 json.len = request.mainbuff->len - request.procint;
 progress = json.len;
 }else{
-loggingf ("data not started in first xmission\n");
+printf ("data not started in first xmission\n");
 } //if
 
 while (progress < request.content_len)
 {
 inbuff.len = sock_read (request.fd, inbuff.p, inbuff.max);
 if (inbuff.len ==-1)
-{loggingf ("read timeout, 839\n"); break;}
+{printf ("read timeout, 839\n"); break;}
 
 memcpy (json.p + json.len, inbuff.p, inbuff.len);
 progress += inbuff.len;
 json.len += inbuff.len;
 } // while cat json
 
-loggingf ("finished cat json\n");
+printf ("finished cat json\n");
 
 
 for (int i = 0; i < json.len; ++i)
@@ -1002,8 +1125,8 @@ else if (json.p[i+1] == '\'')
 else if (json.p[i+1] == 't')
 	filedata.p[filedata.len] = 9;
 else
-loggingf ("missing escape sequence\n");
-	//{loggingf ("the missing escape is: %d (%c)\n", src->p[i+1], src->p[i+1]);
+printf ("missing escape sequence\n");
+	//{printf ("the missing escape is: %d (%c)\n", src->p[i+1], src->p[i+1]);
 //dest->p[dest->len] = '^';}
 
 ++i;
@@ -1047,7 +1170,7 @@ out.p = outb;
 out.len = 0;
 out.max = maxbuffer;
 
-loggingf ("get config\n");
+printf ("get config\n");
 
 buffcatf (&out, "<!DOCTYPE html>\n<html>\n<head>\n");
 
@@ -1099,10 +1222,10 @@ void safe_fname (const struct request_data request, const char *fname, char *rtn
       ++copynum;
  }// while
 }// safe_fname
-
+/*
 int put_file (const struct request_data request)
 {
-loggingf ("put_file commence\n");
+printf ("put_file commence\n");
 
 const int safename = 1;
 
@@ -1129,7 +1252,7 @@ char fname [nameholder];
 char fullpath [string_sz];
 int d1 = 0, d2 = 0;
 read_progress = request.mainbuff->len - request.procint + request.codelen + 2;	
-loggingf ("data started in first xmission: %d / %l\n", read_progress, request.content_len);
+printf ("data started in first xmission: %d / %l\n", read_progress, request.content_len);
 //find second boundary, place into d1
 
   // find start of fdata place into d1
@@ -1144,7 +1267,7 @@ buffcatf (&audit, "mainbuff->\n", request.mainbuff->p);
 // diagnostics
 if (d2==-1)
 {
-//loggingf ("mainbuff proc fdata started and spans 1114\n");
+//printf ("mainbuff proc fdata started and spans 1114\n");
 fdata.len=0;
 d2 = request.mainbuff->len;
 
@@ -1179,25 +1302,25 @@ if (enddata < request.mainbuff->len)
 {
 buffcatf (&audit, "additional data may be started in first xmission\n");
 //d1 = search (request.mainbuff->p, request.code, enddata, request.mainbuff->len);
-//	if (d1==-1) {loggingf ("search error 1118\n"); exit (0);}
+//	if (d1==-1) {printf ("search error 1118\n"); exit (0);}
 
 d1 = search (request.mainbuff->p, "filename=\"", enddata, request.mainbuff->len);
 	if (d1==-1) {buffcatf (&audit, "1290, no files in first xmission, data within next xmission\n"); goto multi;}
 d2 = getnext (request.mainbuff->p, '\"', d1 + 1, request.mainbuff->len);
-	if (d2==-1) {loggingf ("search error 1292\n"); exit (0);}
+	if (d2==-1) {printf ("search error 1292\n"); exit (0);}
 
 midstr (request.mainbuff->p, fname, d1, d2);
 buffcatf (&audit, "fname: %s\n", fname);
 
 startdata = getnext (request.mainbuff->p, '\n', d2 + 4, request.mainbuff->len);
-	if (startdata ==-1) {loggingf ("error 1298\n"); exit (0);}
+	if (startdata ==-1) {printf ("error 1298\n"); exit (0);}
 startdata += 3;
 
 if (safename) safe_fname (request, fname, fullpath);
 else sprintf (fullpath, "%s/%s",request.fullpath, fname);
 
 localfd = open (fullpath, O_WRONLY | O_TRUNC| O_CREAT, S_IRUSR | S_IWUSR);
-	if (localfd ==-1) {loggingf ("error 1160\n"); exit(0);}
+	if (localfd ==-1) {printf ("error 1160\n"); exit(0);}
 filenum = 1;
 fsize = get_nextsize (&fdata);
 buffcatf (&audit, "file opened: %s, %d: bytes\n", fullpath, fsize);
@@ -1210,10 +1333,10 @@ if (fsize < d1)
 write (localfd, request.mainbuff->p + startdata, fsize);
 close (localfd);
 localfd = -1;
-loggingf ("first file recieved, within first xmission\n");
+printf ("first file recieved, within first xmission\n");
 
 if (filecount == 1)
-{loggingf ("only one file to recieved, done, check\n");
+{printf ("only one file to recieved, done, check\n");
 send_txt (request.fd, "only one small file to recieve, done");
 return 1;} // if no more files and all data transmitted in single xmission
 
@@ -1250,7 +1373,7 @@ int startdata = 0, enddata = 0;
 char temp1 [nameholder];
 
 inbuff.len = usock_read (request.fd, inbuff.p, inbuff.max);
-if (inbuff.len ==-1){loggingf ("client timed out\n"); return -1;}
+if (inbuff.len ==-1){printf ("client timed out\n"); return -1;}
 read_progress += inbuff.len;
 
 if (fdata.len == -1)
@@ -1262,7 +1385,7 @@ startdata += 3;
 } // if fdata not started at all
 
 enddata = ugetnext (inbuff.p, '\n', startdata + 1, inbuff.len);
-if (enddata ==-1) {loggingf ("1227 error locating fdata end\n"); exit (0);}
+if (enddata ==-1) {printf ("1227 error locating fdata end\n"); exit (0);}
 inbuff.procint = enddata;
 
 umidstr (inbuff.p, fdata.p, startdata, enddata);
@@ -1294,7 +1417,7 @@ if (startdata ==-1) {inbuff.procint = 0; continue;}
 
 int enddata = ugetnext (inbuff.p, '\"', startdata +1, inbuff.len);
 if (enddata ==1)
-{loggingf ("not sure how this happened:\n"); exit (0);}
+{printf ("not sure how this happened:\n"); exit (0);}
 
 char fname [nameholder];
 umidstr (inbuff.p, fname, startdata, enddata);
@@ -1303,10 +1426,10 @@ char fullpath [string_sz];
 //if (safename) safe_fname (request, fname, fullpath);
 //else 
 sprintf (fullpath, "%s/%s", request.fullpath, fname);
-loggingf ("fullpath: %s\n", fullpath);
+printf ("fullpath: %s\n", fullpath);
 
 localfd = open (fullpath, O_WRONLY | O_TRUNC| O_CREAT, S_IRUSR | S_IWUSR);
-if (localfd ==-1) {loggingf ("error 1269\n"); exit(0);}
+if (localfd ==-1) {printf ("error 1269\n"); exit(0);}
 
 fsize = get_nextsize (&fdata);
 filenum += 1;
@@ -1333,7 +1456,7 @@ inbuff.procint = 0;
 } // if data remains in buff
 
 inbuff.len = usock_read (request.fd, inbuff.p, inbuff.max);
-if (inbuff.len ==-1){loggingf ("client timed out 1441\n"); return -1;}
+if (inbuff.len ==-1){printf ("client timed out 1441\n"); return -1;}
 read_progress += inbuff.len;
 
 
@@ -1346,7 +1469,7 @@ file_progress += inbuff.len;
 
 if (file_progress > fsize)
 {
-loggingf ("closing: %d\n", filenum);
+printf ("closing: %d\n", filenum);
 ftruncate (localfd, fsize);
 close (localfd);
 localfd =-1;
@@ -1357,7 +1480,7 @@ int offset = inbuff.len - leftover;
 memmove (inbuff.p, inbuff.p + offset, inbuff.len - offset);
 
 int newin = usock_read (request.fd, inbuff.p + offset, inbuff.max - offset);
-if (newin == -1) {loggingf ("newin read timeout\n"); return -1;}
+if (newin == -1) {printf ("newin read timeout\n"); return -1;}
 // a bit sloppy here....
 // needs future reivision
 inbuff.len += newin;
@@ -1373,23 +1496,26 @@ continue;
 if (localfd == -1)
 { inbuff.procint = 1;}
 
-} //while data remains
+} //w
+
+
+hile data remains
 
 send_txt (request.fd, "done");
-loggingf ("done\n");
+printf ("done\n");
 return 1;
 } // put_file
-
+*/
 
 int send_err (const int fd, const int code)
 {
 
 if (code == 410)
-	sock_write (fd, "HTTP/1.1 410 GONE", 0);
+	sock_writeold (fd, "HTTP/1.1 410 GONE", 0);
 
 
 if (code == 500)
-	sock_write (fd, "HTTP/1.1 500 ERROR", 0);
+	sock_writeold (fd, "HTTP/1.1 500 ERROR", 0);
 
 return 1;
 } // send_err
@@ -1504,3 +1630,464 @@ sock_buffwrite (fd, &outbuff);
 
 return 1;
 } // send_ftxt
+
+
+
+
+int sock_buffwrite (const int connfd, struct buffer_data *out)
+{
+int wlen = 0;
+int progress = 0;
+int offset = 0;
+int i;
+
+int written = sock_writeold (connfd, out->p, out->len);
+if (written == -1)
+	return -1;
+
+if (written == out->len)
+	return written;
+
+progress = written;
+
+while (progress < out->len)
+{
+wlen = 0;
+for (i = offset; i < 500 - offset; ++i)
+{
+++wlen;
+out->p [i] = out->p [wlen + progress];
+if (i + offset == 500)
+	break;
+
+if (progress + wlen == out->len)
+       break;
+
+}// for reset op 
+int totalwrite = wlen + offset;
+
+written = sock_writeold (connfd, out->p, totalwrite);
+if (written == -1)
+	return -1;
+
+if (written == totalwrite)
+	offset = 0;
+
+if (written < totalwrite)
+{
+offset = wlen - written;
+
+for (i = 0; i < offset; ++i)
+{
+out->p[i] = out->p[i + written];
+
+
+} // for copy offset
+
+} // if incomplete writer
+progress += wlen;
+
+
+} // while progress <
+return 1; 
+} // sock_buffwrite
+
+
+int getnext (const char *str, const int next, const int start, int end)
+{
+const int debug = 0;
+
+if (end == 0)
+end = strlen (str);
+
+for (int i = start; i < end; ++i)
+{
+    
+if (debug)
+printf ("c: %c - %c\n", str[i], next);
+        
+if (str[i] == next)
+	return i;
+} // for
+
+    return  -1;
+} // getnext
+
+
+int midstr(const char *major, char *minor, int start, const int end)
+{
+int count = 0;
+while (start < end)
+{
+minor[count] = major[start];
+++start;
+++count;
+}
+minor[count] = 0;
+return (count);
+} // end midstr
+
+
+void buffcatf (struct buffer_data *buff, const char *format, ...)
+{
+va_list ap;
+va_start (ap, format);
+
+int formatlen = strlen (format);
+char type;
+int specify_len = 0;
+char entry [maxbuffer] = "";
+
+int len = 0;
+int d;
+char c;
+char *s;
+
+
+for (int fplace = 0; fplace < formatlen; ++fplace)
+{
+if (format [fplace] == '%')
+{
+type = format [fplace + 1];
+// if length is specified as %.*s
+if (type == '.') { specify_len = 1; type = format [fplace + 3];}
+
+if (type == 's')
+{
+if (specify_len)
+{
+d = va_arg(ap, int);
+s = va_arg(ap, char *);
+len += sprintf (entry + len, "%.*s", d, s);
+fplace += 3;
+} // if spec_len	
+
+if (!specify_len)
+{
+s = va_arg(ap, char *);
+len += sprintf (entry + len, "%s", s);
+++fplace;
+
+} // if ! specify_len
+} // if s
+    
+if (type == 'd')
+{
+d = va_arg(ap, int);
+len+= sprintf (entry + len, "%d", d);
+++fplace;
+} // if d
+    
+
+if (type == 'c')
+{
+c = (char) va_arg(ap, int);
+entry [len] = c;
+++len;
+entry [len] = 0;
+++fplace;    
+} // if c
+    
+    
+}else{ // else if    
+entry [len] = format [fplace];
+++len;
+
+} // if    
+} // for
+
+//printf ("%s\n", entry);
+
+for (int i = 0; i < len; ++i)
+{
+buff->p [buff->len] = entry [i];
+++buff->len;
+
+} // for
+
+
+
+//return 1;
+} // buffcatf
+
+
+int search (const char *main, const char *minor, const int start, const int end)
+{
+int minorlen = strlen (minor) -1;
+
+int i, x;
+for (i = start; i < end; ++i)
+{
+if (main[i] == minor[0])
+{
+for (x = 1; x < minorlen; ++x)
+{
+	
+if (main [i + x] != minor [x])
+ break; // if minor mismatch
+
+} // for x
+if (x == minorlen)
+return (i + x + 1);
+
+} // end if minor [0] hit
+
+} // end for i
+
+return -1;
+} // end search
+
+int send_file (const char *path, const int fd)
+{
+int locfd = open (path, O_RDONLY);
+if (locfd < -1)
+    return -1;
+
+struct stat finfo;
+fstat (locfd, &finfo);
+
+size_t read_progress = 0;
+
+size_t write_progress = 0;
+
+size_t fsize = finfo.st_size;
+//printf (200, "file size: %d\n", fsize);
+
+char *c_fbuffer = (char *) malloc (sendfileunit);
+struct buffer_data fbuff;
+fbuff.p = c_fbuffer;
+fbuff.max = sendfileunit;
+
+
+while (read_progress < fsize)
+{  
+fbuff.len = read (locfd, fbuff.p, fbuff.max);
+read_progress += fbuff.len;
+
+int interim_progress = sock_writeold (fd, fbuff.p, fbuff.len);
+if (interim_progress == -1)
+	return -1;
+
+int cpylen = interim_progress;
+while (cpylen < fbuff.len)
+{
+
+interim_progress = sock_writeold (fd, fbuff.p + cpylen, fbuff.len - cpylen);
+if (interim_progress == -1)
+	return -1;
+cpylen += interim_progress;
+} // while
+
+} // while loop
+close (locfd);
+free (c_fbuffer);
+return 1;
+} // sendfile
+
+int sock_setnonblock (const int fd)
+{
+if (fcntl(fd, F_SETFL, fcntl(fd, F_GETFL, 0) | O_NONBLOCK) == -1)
+{
+    perror("calling fcntl");
+
+    return 0;
+} // if
+    return 1;
+} // sock_setnonblock
+
+int prepsocket (const int PORT)
+{
+int result = 0;
+int optval = 1;
+struct linger ling;
+ling.l_onoff=1;
+ling.l_linger=4;
+
+int server_fd = socket(AF_INET, SOCK_STREAM, 0);
+
+struct sockaddr_in address;
+int addrlen = sizeof(address);
+
+memset(&address, 0, sizeof (address));
+address.sin_family = AF_INET;
+
+address.sin_addr.s_addr = INADDR_ANY;
+
+address.sin_port = htons( PORT );
+//memset(address.sin_zero, 0, sizeof address.sin_zero);
+
+result = setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &optval , sizeof(int));
+if (result == -1)
+	perror("error, reuse addr");
+
+//result = setsockopt(server_fd, SOL_SOCKET, TCP_CORK,&optval , sizeof(int));
+//if (result == -1)
+//	logging("error, TCP-CORK", 100, 0);
+
+
+//result = setsockopt(server_fd, SOL_SOCKET, SO_LINGER, &ling, sizeof(ling));
+//if (result == -1)
+//	logging("error, linger", 100, 0);
+
+result = bind(server_fd, (struct sockaddr *)&address,(socklen_t) sizeof(address));
+if (result == -1)
+	return -1; 
+	//perror("error, bind");
+
+result = listen(server_fd, 10);
+if (result == -1)
+	perror("error, reuse listen");
+
+return (server_fd);
+}// end prep socket
+
+void softclose (const int fd, struct buffer_data *inbuff)
+{
+
+shutdown (fd,  SHUT_WR);
+
+//wait for client to close connection
+int a = -1;
+
+while (a) 
+{
+a=read(fd, inbuff->p, inbuff->max);
+
+//if (a > 0)
+//printf ("reading \"success\" in kill mode\n");
+
+if(a < 0)
+{
+usleep (1000);
+//logging ("closing, remote, not ready",1,0);
+}
+if(!a) 
+{
+printf ("Connection closed by client\n");
+} // if socket non blocked
+} // for wait for close bit.
+
+close(fd);
+} // softclose
+
+
+int sock_writeold (const int connfd, const char *buffer, int size)
+{ // bm sock writeold
+
+if (size == 0)
+    size = strlen (buffer);
+
+struct pollfd ev;
+ev.fd = connfd;
+ev.events = POLLOUT;
+
+int prtn = poll (&ev, 1, timeout * 1000);
+if (prtn < 1) return -1;
+
+return write (connfd, buffer, size);
+
+} // sock_write_old
+
+int sock_read (const int connfd, char *buffer, const int size)
+{
+struct pollfd ev;
+ev.fd = connfd;
+ev.events = POLLIN;
+
+int r = poll (&ev, 1, timeout * 1000);
+if (r == 0) return -1;
+
+int len = read (connfd, buffer, size);
+	
+return len;
+} // sock_read
+
+
+int sock_write (const int connfd, char *out, const int len)
+{
+int wlen = 0;
+int progress = 0;
+int offset = 0;
+int i;
+
+int written = sock_writeold (connfd, out, len);
+if (written == -1)
+	return -1;
+
+if (written == len)
+	return written;
+
+progress = written;
+
+while (progress < len)
+{
+wlen = 0;
+for (i = offset; i < 500 - offset; ++i)
+{
+++wlen;
+out [i] = out [wlen + progress];
+if (i + offset == 500)
+	break;
+
+if (progress + wlen == len)
+       break;
+
+}// for reset op 
+int totalwrite = wlen + offset;
+
+written = sock_writeold (connfd, out, totalwrite);
+if (written == -1)
+	return -1;
+
+if (written == totalwrite)
+	offset = 0;
+
+if (written < totalwrite)
+{
+offset = wlen - written;
+
+for (i = 0; i < offset; ++i)
+{
+out[i] = out[i + written];
+
+
+} // for copy offset
+
+} // if incomplete writee
+progress += wlen;
+
+
+} // while progress <
+return 1; 
+} // sock_buffwrite
+
+
+int getlast (const char *str, const int next, int end)
+{
+
+if (!end)
+	end = strlen (str);
+
+    for (int i = end; i >= 0; --i)
+    {
+    
+        
+        if (str[i] == next)
+            return i;
+    }
+
+    return  -1;
+}
+
+void save_buffer (const struct buffer_data b, const char *path)
+{
+int localfd = open (path, O_WRONLY | O_TRUNC| O_CREAT, S_IRUSR | S_IWUSR);
+if (localfd < 0)
+	return ;
+
+write (localfd, b.p, b.len);
+
+
+close (localfd);
+}// save_page
+
