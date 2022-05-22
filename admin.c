@@ -719,7 +719,7 @@ request->filename [path_len - rtn] = 0;
 
 rtn = getlast (request->path, (int) '.', path_len);
 if (rtn != -1) {
-memcpy (request->ext, request->path + rtn + 1, path_len - rtn - 1);
+memcpy (request->ext, request->path + rtn, path_len - rtn);
 request->ext [path_len - rtn] = 0;
 //printf ("Ext: [%s]\n", request->ext);
 
@@ -797,6 +797,8 @@ editor.len = read (editor_fd, editor.p, editor.max);
 editor.p[editor.len] = 0;
 close (editor_fd);
 
+printf ("st: %d, len: %d max %d\n", finfo.st_size, editor.len, editor.max);
+
 if (stat (request.full_path, &finfo)) {send_txt (request.fd, "cant stat FILE"); return 0;}
 filedata = init_buffer (finfo.st_size);
 int file_fd = open (request.full_path, O_RDONLY);
@@ -804,6 +806,8 @@ if (file_fd < 0) {send_txt (request.fd, "cant open FILE"); return 0;}
 filedata.len = read (file_fd, filedata.p, filedata.max);
 filedata.p[filedata.len] = 0;
 close (file_fd);
+
+printf ("st: %d, len: %d max %d\n", finfo.st_size, filedata.len, filedata.max);
 } // end file stat
 
 
@@ -837,9 +841,9 @@ buffcatf (&bookmarks, "</select>\n");
 
 int req_len = editor.len + filedata.len + bookmarks.len;
 
-editor.p = realloc (editor.p, req_len);
-if (editor.p == NULL) killme ("no realloc");
-
+//editor.p = realloc (editor.p, req_len);
+//if (editor.p == NULL) killme ("no realloc");
+//editor.max = req_len;
 FAR (&editor, "<!--bookmarks-->", bookmarks);
 //buffer_t encoded = init_buffer (0);
 buffer_t encoded = HTML_encode (filedata, 1);
@@ -852,6 +856,8 @@ printf ("%d bytes: edit file served\n", editor.len);
 
 sock_writeold (request.fd, head.p, head.len);
 sock_buffwrite (request.fd, &editor);
+
+save_buffer (editor, "get_edit.txt");
 
 free (filedata.p);
 free (editor.p);
@@ -867,10 +873,10 @@ int post_edit (const struct request_data request)
 {
 //save_buffer (request.mainbuff, "POST_EDIT.txt");
 
-int fd1 = open ("POST_EDIT.txt", O_WRONLY | O_TRUNC| O_CREAT, S_IRUSR | S_IWUSR);
-if (fd1 == -1) killme ("opening file");
-write (fd1, request.mainbuff->p, request.mainbuff->len);
-close (fd1);
+//int fd1 = open ("POST_EDIT.txt", O_WRONLY | O_TRUNC| O_CREAT, S_IRUSR | S_IWUSR);
+//if (fd1 == -1) killme ("opening file");
+//write (fd1, request.mainbuff->p, request.mainbuff->len);
+//close (fd1);
 
 int progress = 0;
 
@@ -885,7 +891,7 @@ memcpy (encoded.p, request.mainbuff->p + d1 + 1, request.mainbuff->len - d1);
 encoded.len = request.mainbuff->len - d1;
 progress = request.mainbuff->len - d1;
 }
-printf ("content len: %lu, progress: %d\n", request.content_len, encoded.len);
+//printf ("content len: %lu, progress: %d\n", request.content_len, encoded.len);
 
 /*
 if (request.content_len == progress) {
@@ -897,13 +903,13 @@ encoded.len -= 2;
 
 while (progress < request.content_len) {
 encoded.len += sock_read (request.fd, encoded.p + encoded.len, encoded.max);
-printf ("multi-reciever\n");
-
+//printf ("multi-reciever\n");
+progress = encoded.len;
 }
 
 save_buffer (encoded, "encoded.txt");
 
-printf ("finished cat json\n[%.*s]\n", encoded.len, encoded.p);
+//printf ("finished cat json\n[%.*s]\n", encoded.len, encoded.p);
 
 char backup [string_sz];
 strcpy (backup, "old/");

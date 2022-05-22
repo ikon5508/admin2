@@ -34,7 +34,7 @@ int d1 = p1 - in.p + 1;
 char dchar = in.p[d1];
 
 
-printf ("%d pos:%d dchar: %c\n", inst_count ,d1 , dchar);
+//printf ("%d pos:%d dchar: %c\n", inst_count ,d1 , dchar);
 
 switch (dchar) {
 case 'n':
@@ -78,11 +78,10 @@ tail = d1 + 1;
 printf ("in.len: %d| req_len: %d\n", in.len, req_len);
 
 buffer_t out = init_buffer (req_len);
-
-tail = -1;
-for (int i = 0; i < inst_count; ++i)
+int i = 0;
+tail = 0;
+for (i = 0; i < inst_count; ++i)
 {
-int len = inst[i].pos - tail - 2;
 //printf ("%d: pos:%d, dchar %c\n", i, inst[i].pos, inst[i].dchar);
 //continue;
 /*
@@ -98,6 +97,7 @@ printf ("adding [%s]\n", temp);
 //printf ("inst.pos: %d, inst.dchar: %d, tail: %d\n", inst[i].pos, inst[i].dchar, tail);
 //}
 
+int len = inst[i].pos - tail - 2;
 memcpy (out.p + out.len, in.p + tail + 1, len);
 out.len += len;
 
@@ -137,6 +137,21 @@ killme ("unhandled instruction");
 
 ++out.len;
 } // loop
+
+///printf ("req_len: %d, ou.len: %d\n", req_len, out.len);
+
+int len = req_len - out.len - 1;
+memcpy (out.p + out.len, in.p + tail + 1, len);
+out.len += len;
+
+/*
+char temp [default_sz];
+memset (temp, 0, default_sz);
+memcpy (temp, in.p + tail +1, len);
+printf ("adding [%s]\n", temp);
+exit (0);
+*/
+
 free (inst);
 return out;
 } // JSON decode
@@ -163,17 +178,20 @@ strcpy (searchstr, "<>\n");
 
 
 //printf ("%s\n\n", in.p);
-const int increment = 200;
+const int increment = 500;
 int inst_max = increment;
 int inst_count = 0;
 
 struct blueprint *inst = (struct blueprint *)  malloc (inst_max * sizeof (struct blueprint));
 if (inst == NULL) killme ("no malloc");
 int req_len = in.len;
-
+printf ("in.len: %d\n", in.len);
 while (1)
+//for (int q = 0; q < 10; ++q)
 {
+
 char *p1 = strpbrk (in.p + d1, searchstr);
+//char *p1 = memchr (in.p + d1, (int) '<', in.len);
 if (p1 == NULL) break ;
 
 if (inst_count == inst_max)
@@ -376,6 +394,7 @@ int needed = base->max + req_len;
 
 base->p = (char *) realloc (base->p, needed);
 if (base->p == NULL) killme ("no realloc");
+base->max = needed;
 } // if base resize needed
 
 memcpy (base->p + d1, rep.p, rep.len);
@@ -440,8 +459,10 @@ char temp [100];
 int tlen = sprintf (temp, "%d", d);
 buffer_sanity (buff, tlen, tlen);
 
-strcat (buff->p, temp);
-buff->len += tlen;
+buff->len += sprintf (buff->p + buff->len, "%d", d);
+
+//strcat (buff->p, temp);
+//buff->len += tlen;
 
 //buff->len +=break;
 } // switch
@@ -704,7 +725,7 @@ struct buffer_data buffer;
 if (sz == 0)
 {memset (&buffer, 0, sizeof (struct buffer_data)); return buffer;}
 
-buffer.p = (char *) malloc (sz);
+buffer.p = (char *) malloc (sz + 1);
 if (buffer.p == NULL) killme ("error malloc");
 
 buffer.max = sz;
