@@ -1,4 +1,3 @@
-
 #include "shared.h"
 #include <dirent.h>
 #include <stdlib.h>
@@ -15,9 +14,16 @@
 #include <string.h>
 #include <time.h>
 #include <netdb.h>
+#include <signal.h>
+#include <openssl/sha.h>
 
+#include <poll.h>
 
-#define sendfileunit 5000000
+#define edit_mode "/edit"
+#define action_mode "/action"
+#define file_mode "/file"
+
+#define sendfileunit 10000000
 #define maxbuffer 100000
 #define nameholder 100
 #define string_sz 1000
@@ -137,15 +143,3 @@ int post_edit (const struct request_data request);
 int get_edit (const struct request_data request);
 int get_config (const struct settings_data settings, const struct request_data request);
 int put_file (const struct request_data request);
-
-
-
-
-
-
-
-
-
-
-
-

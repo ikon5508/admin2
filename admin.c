@@ -797,7 +797,6 @@ editor.len = read (editor_fd, editor.p, editor.max);
 editor.p[editor.len] = 0;
 close (editor_fd);
 
-printf ("st: %d, len: %d max %d\n", finfo.st_size, editor.len, editor.max);
 
 if (stat (request.full_path, &finfo)) {send_txt (request.fd, "cant stat FILE"); return 0;}
 filedata = init_buffer (finfo.st_size);
@@ -807,7 +806,6 @@ filedata.len = read (file_fd, filedata.p, filedata.max);
 filedata.p[filedata.len] = 0;
 close (file_fd);
 
-printf ("st: %d, len: %d max %d\n", finfo.st_size, filedata.len, filedata.max);
 } // end file stat
 
 
@@ -906,15 +904,14 @@ encoded.len += sock_read (request.fd, encoded.p + encoded.len, encoded.max);
 //printf ("multi-reciever\n");
 progress = encoded.len;
 }
+//printf ("finished cat json\n[%.*s]\n", encoded.len, encoded.p);
 
 save_buffer (encoded, "encoded.txt");
-
-//printf ("finished cat json\n[%.*s]\n", encoded.len, encoded.p);
 
 char backup [string_sz];
 strcpy (backup, "old/");
 strcat (backup, request.filename);
-strcat (backup, "-%m%d%H%M");
+strcat (backup, "-%H%M");
 strcat (backup, request.ext);
 
 time_t t;
@@ -931,7 +928,7 @@ if (rename (request.full_path, outstr) == -1)
 	printf ("error moving backup file\n");
 
 buffer_t decoded = JSON_decode (encoded);
-printf ("request.full_path: %s\n", request.full_path);
+
 int localfd = open (request.full_path, O_WRONLY | O_TRUNC| O_CREAT, S_IRUSR | S_IWUSR);
 if (localfd < 0) {
 printf ("errno %d\n", errno);
@@ -945,10 +942,9 @@ close (localfd);
 send_txt (request.fd, "it worked");
 free (encoded.p);
 free (decoded.p);
-
 return 1;
 
-} //put edit
+} //post edit
 
 
 int get_config (const struct settings_data settings, const struct request_data request)
@@ -1038,7 +1034,7 @@ if (request.procint > 0)
 {
 int startdata = 0, enddata = 0;
 char fname [nameholder];
-char full_path [string_sz];
+charfull_path [string_sz];
 int d1 = 0, d2 = 0;
 read_progress = request.mainbuff->len - request.procint + request.codelen + 2;	
 printf ("data started in first xmission: %d / %l\n", read_progress, request.content_len);
@@ -1723,4 +1719,3 @@ write (localfd, b.p, b.len);
 
 close (localfd);
 }// save_page
-

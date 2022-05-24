@@ -7,7 +7,7 @@
 buffer_t JSON_decode (const buffer_t in)
 {
 int tail = 0;
-int req_len = in.len;
+int req_len = in.len - 2;
 
 const int increment = 200;
 int inst_max = increment;
@@ -75,38 +75,19 @@ tail = d1 + 1;
 ++inst_count;
 } //loop
 
-printf ("in.len: %d| req_len: %d\n", in.len, req_len);
+//printf ("in.len: %d| req_len: %d\n", in.len, req_len);
 
 buffer_t out = init_buffer (req_len);
+memset (out.p, 0, req_len);
 int i = 0;
-tail = 0;
+tail = -1;
 for (i = 0; i < inst_count; ++i)
 {
-//printf ("%d: pos:%d, dchar %c\n", i, inst[i].pos, inst[i].dchar);
-//continue;
-/*
-char temp [default_sz];
-memset (temp, 0, default_sz);
-memcpy (temp, in.p + tail +1, len);
-printf ("adding [%s]\n", temp);
-*/
-
-//printf ("out.len: %d, out.max: %d, len: %d\n", out.len, out.max, len);
-//if (len < 0) {
-//printf ("[%d]...inst count: %d\n", i, inst_count);
-//printf ("inst.pos: %d, inst.dchar: %d, tail: %d\n", inst[i].pos, inst[i].dchar, tail);
-//}
 
 int len = inst[i].pos - tail - 2;
 memcpy (out.p + out.len, in.p + tail + 1, len);
 out.len += len;
-
-
-
 tail = inst[i].pos;
-
-
-
 
 switch (inst[i].dchar) {
 
@@ -140,9 +121,19 @@ killme ("unhandled instruction");
 
 ///printf ("req_len: %d, ou.len: %d\n", req_len, out.len);
 
-int len = req_len - out.len - 1;
-memcpy (out.p + out.len, in.p + tail + 1, len);
+int len = req_len - out.len +1;
+if (len > 0) {
+memcpy (out.p + out.len, in.p + tail +1, len);
 out.len += len;
+printf ("added!!\n");
+}else{
+printf ("len is 0\n");
+}
+
+
+
+
+//printf ("len: %d ...last char: %d[%c]\n", out.len, out.p[out.len], out.p[out.len]);
 
 /*
 char temp [default_sz];
