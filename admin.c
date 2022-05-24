@@ -1,10 +1,7 @@
 #include "admin.h"
-
 #include <signal.h>
 #include <openssl/sha.h>
-
 #include <poll.h>
-
 #define edit_mode "/edit"
 #define action_mode "/action"
 #define file_mode "/file"
@@ -41,8 +38,6 @@ if (strcmp(request.ext, ".cpp") == 0)
 
 if (strcmp(request.ext, ".hpp") == 0)
 		viewtype = txt;
-
-
 
 if (strcmp(request.ext, ".htm") == 0)
 		viewtype = txt;
@@ -355,7 +350,7 @@ if (!strcmp (argv[i], "-dir"))
 strcpy (settings.base_path, argv[i+1]);
 
 if (!strcmp (argv[i], "-editor"))
-strcpy (settings.editor_path, argv[i+1]);
+strcpy (settings.editor, argv[i+1]);
 
 } // for settings
 
@@ -364,7 +359,7 @@ socklen_t addrlen = sizeof(address);
 
 int servfd = prepsocket (settings.port);
 
-printf ("admin load\nPort: %d\nPath: %s\nEditor: %s\n", settings.port, settings.base_path, settings.editor_path);
+printf ("admin load\nPort: %d\nPath: %s\nEditor: %s\n", settings.port, settings.base_path, settings.editor);
 
 char inbuffer [string_sz];
 struct buffer_data inbuff;
@@ -405,8 +400,17 @@ printf ("GET: %s\n", request.url);
 
 switch (request.mode) {
 
-case file:
+case root:
+if (request.type == reg || request.type == altreg) {
+	serv_file (request);
+}else if (request.type == dir || request.type == altdir) {
+	serv_dir (request);
+}else {
+	send_txt (connfd, "Bad Resource");
+}// if else if type
 
+break;
+case file:
 if (request.type == reg || request.type == altreg) {
 	serv_file (request);
 }else if (request.type == dir || request.type == altdir) {
@@ -789,14 +793,15 @@ buffer_t filedata;
 
 {
 struct stat finfo;
-if (stat (settings.editor_path, &finfo)) {send_txt (request.fd, "cant stat Editor"); return 0;}
+char editor_path [smbuff_sz];
+sprintf (editor_path, "%s/%s", settings.internal, settings.editor);
+if (stat (editor_path, &finfo)) {send_txt (request.fd, "cant stat Editor"); return 0;}
 editor = init_buffer (finfo.st_size);
-int editor_fd = open (settings.editor_path, O_RDONLY);
+int editor_fd = open (editor_path, O_RDONLY);
 if (editor_fd < 0) {send_txt (request.fd, "cant open Editor"); return 0;}
 editor.len = read (editor_fd, editor.p, editor.max);
 editor.p[editor.len] = 0;
 close (editor_fd);
-
 
 if (stat (request.full_path, &finfo)) {send_txt (request.fd, "cant stat FILE"); return 0;}
 filedata = init_buffer (finfo.st_size);
@@ -891,7 +896,7 @@ memcpy (encoded.p, request.mainbuff->p + d1, request.mainbuff->len - d1);
 encoded.len = request.mainbuff->len - d1;
 progress = request.mainbuff->len - d1;
 }
-//printf ("content len: %lu, progress: %d\n", request.content_len, encoded.len);
+//printf ("content en: %lu, progress: %d\n", request.content_len, encoded.len);
 
 /*
 if (request.content_len == progress) {
@@ -908,12 +913,12 @@ progress = encoded.len;
 }
 //printf ("finished cat json\n[%.*s]\n", encoded.len, encoded.p);
 
-save_buffer (encoded, "encoded.txt");
+save_buffer (encoded, "JSONencoded.txt");
 
 char backup [string_sz];
 strcpy (backup, "old/");
 strcat (backup, request.filename);
-strcat (backup, "-%H-%M");
+strcat (backup, "-%H:%M");
 strcat (backup, request.ext);
 
 time_t t;
@@ -983,7 +988,7 @@ return 2;
 
 int servico (const int fd)
 {
-   struct string_data outbuff;
+  struct string_data outbuff;
    
 struct stat finfo;
 stat ("favicon.ico", &finfo);
@@ -1036,7 +1041,7 @@ int localfd = -1;
 
 if (request.procint > 0)
 {
-int startdata = 0, enddata = 0;
+int stardata = 0, enddata = 0;
 char fname [nameholder];
 charfull_path [strig_sz];
 int d1 = 0, d2 = 0;
@@ -1723,3 +1728,4 @@ write (localfd, b.p, b.len);
 
 close (localfd);
 }// save_page
+

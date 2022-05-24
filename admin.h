@@ -39,22 +39,6 @@ int len;
 };
 //typedef struct string_data string;
 
-void softclose (const int fd, struct buffer_data *inbuff);
-
-int getnext (const char *base, const int c, const int offset, const int len);
-
-
-
-int sock_buffwrite (const int connfd, struct buffer_data *out);
-int prepsocket (const int PORT);
-int sock_setnonblock (const int fd);
-int sock_writeold (const int connfd, const char *buffer, const int size);
-int sock_read (const int connfd, char *buffer, int size);
-int sock_write (const int connfd, char *out, const int len);
-
-int send_file (const char *path, const int fd);
-
-void save_buffer (const struct buffer_data b, const char *path);
 extern const int timeout;
 
 
@@ -89,13 +73,13 @@ int showaction;
 // 0 for  non, 1 for show action page 2 for preview file
 char base_path [string_sz];
 char internal [string_sz];
-char editor_path [string_sz];
+char editor [string_sz];
 
     
-}settings = {9999, 1, ".", "~", "aceeditor.htm"};
+}settings = {9999, 1, ".", "internal", "aceeditor.htm"};
 
 enum emode
-{file, err, edit, action, upload, config, favicon, websock, postdump};
+{root, err, file, edit, action, upload, config, favicon, websock, postdump};
 
 enum rtype
 {none, reg, dir, altreg, altdir};
@@ -126,6 +110,24 @@ int fd;
 enum emode mode;
 enum rtype type;
 };
+
+void softclose (const int fd, struct buffer_data *inbuff);
+
+int getnext (const char *base, const int c, const int offset, const int len);
+
+
+
+int sock_buffwrite (const int connfd, struct buffer_data *out);
+int prepsocket (const int PORT);
+int sock_setnonblock (const int fd);
+int sock_writeold (const int connfd, const char *buffer, const int size);
+int sock_read (const int connfd, char *buffer, int size);
+int sock_write (const int connfd, char *out, const int len);
+
+int send_file (const char *path, const int fd);
+
+void save_buffer (const struct buffer_data b, const char *path);
+
 
 void safe_fname (const struct request_data request, const char *fname, char *rtn);
 int servico (const int fd);

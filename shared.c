@@ -184,11 +184,11 @@ char searchstr[10];
 if (level == 1)
 {
 lastc = 0;
-strcpy (searchstr, "<>");
+strcpy (searchstr, "\'\"&<>");
 
 }else if  (level == 2) {
 lastc = '\n';
-strcpy (searchstr, "<>\n");
+strcpy (searchstr, "\"\'&<>\n");
 } // if
 
 
@@ -220,7 +220,21 @@ if (inst == NULL) killme ("no realloc");
 d2 = p1 - in.p;
 char dchar = in.p[d2];
 switch (dchar) {
+// 34 = " 39 = '
+case 34:
+inst [inst_count].pos = d2;
+inst [inst_count].dchar = in.p[d2];
+++inst_count;
+req_len += 5;
 
+break;
+case 39:
+inst [inst_count].pos = d2;
+inst [inst_count].dchar = in.p[d2];
+++inst_count;
+req_len += 5;
+
+break;
 case '<':
 inst [inst_count].pos = d2;
 inst [inst_count].dchar = in.p[d2];
@@ -233,9 +247,15 @@ inst [inst_count].pos = d2;
 inst [inst_count].dchar = in.p[d2];
 ++inst_count;
 req_len += 4;
+
 break;
+case '&':
+inst [inst_count].pos = d2;
+inst [inst_count].dchar = in.p[d2];
+++inst_count;
+req_len += 5;
 
-
+break;
 default :
 
 if (lastc == dchar) {
@@ -281,7 +301,35 @@ out.len += len;
 
 char dchar = inst[i].dchar;
 switch (dchar) {
+case 34: // = "
+//&#34;
+out.p[out.len] = '&';
+out.p[out.len + 1] = '#';
+out.p[out.len + 2] = '3';
+out.p[out.len + 3] = '4';
+out.p[out.len + 4] = ';';
+out.len += 5;
 
+break;
+case 39: // = '
+//&#39;
+out.p[out.len] = '&';
+out.p[out.len + 1] = '#';
+out.p[out.len + 2] = '3';
+out.p[out.len + 3] = '9';
+out.p[out.len + 4] = ';';
+out.len += 5;
+
+break;
+case '&':
+out.p[out.len] = '&';
+out.p[out.len + 1] = 'a';
+out.p[out.len + 2] = 'm';
+out.p[out.len + 3] = 'p';
+out.p[out.len + 4] = ';';
+out.len += 5;
+
+break;
 case '<':
 out.p[out.len] = '&';
 out.p[out.len + 1] = 'l';
@@ -315,7 +363,7 @@ pos = inst[i].pos;
 } //for
 
 
-int len = in.len - pos - 2;
+int len = in.len - pos - 1;
 if (len > 0) {
 memcpy (out.p + out.len, in.p + pos + 1, len);
 out.len += len;
@@ -328,6 +376,9 @@ free (inst);
 return out;
 
 } // end HTML encode
+
+
+
 int URL_decode (const char *in, char *out)
 { // bm URL_decode
 int outlen = 0;
