@@ -641,7 +641,7 @@ mime_txt = contmp4;
 
 outbuff.len = sprintf (outbuff.p, "%s%s%s%ld\n\n", hthead, mime_txt, contlen, request.content_len);
 
-printf ("%ld bytes: %s", request.content_len, mime_txt);
+//printf ("%ld bytes: %s", request.content_len, mime_txt);
 
 sock_writeold (request.fd, outbuff.p, outbuff.len);
 
@@ -754,10 +754,10 @@ if (stat (request->full_path, &finfo) == 0)
 if (request->method == 'G') request->content_len = finfo.st_size;
 //printf ("(base) running stat on: %s\n", request->full_path);
 	if (S_ISDIR(finfo.st_mode))
-		{request->type = dir; printf ("is reg dir\n");}
+		{request->type = dir;}
 
 	if (S_ISREG(finfo.st_mode)) // is file
-		{request->type = reg; printf ("is reg file\n");}
+		{request->type = reg;}
 return 1;
 } // end if 
 
@@ -836,7 +836,7 @@ buffcatf (&bookmarks, "<option value=\"%d\">%s</option>\n", linecount, bm);
 
 } // while
 buffcatf (&bookmarks, "</select>\n");
-
+save_buffer (bookmarks, "bookmarks.txt");
 int req_len = editor.len + filedata.len + bookmarks.len;
 
 //editor.p = realloc (editor.p, req_len);
@@ -845,8 +845,10 @@ int req_len = editor.len + filedata.len + bookmarks.len;
 FAR (&editor, "<!--bookmarks-->", bookmarks);
 //buffer_t encoded = init_buffer (0);
 buffer_t encoded = HTML_encode (filedata, 1);
+save_buffer (encoded, "encodedhtm.txt");
 FAR (&editor, "DELIMETER", encoded);
 
+save_buffer (editor, "editor.txt");
 struct string_data head;
 head.len = sprintf (head.p, "%s%s%s%d\n\n", hthead, conthtml, contlen, editor.len);
 
@@ -885,7 +887,7 @@ char *p1 = strchr (request.mainbuff->p, (int) '\"');
 if (p1 != NULL) {
 printf ("started in 1st xmission\n");
 int d1 = p1 - request.mainbuff->p;
-memcpy (encoded.p, request.mainbuff->p + d1 + 1, request.mainbuff->len - d1);
+memcpy (encoded.p, request.mainbuff->p + d1, request.mainbuff->len - d1);
 encoded.len = request.mainbuff->len - d1;
 progress = request.mainbuff->len - d1;
 }
@@ -911,7 +913,7 @@ save_buffer (encoded, "encoded.txt");
 char backup [string_sz];
 strcpy (backup, "old/");
 strcat (backup, request.filename);
-strcat (backup, "-%H%M");
+strcat (backup, "-%H-%M");
 strcat (backup, request.ext);
 
 time_t t;
@@ -942,6 +944,8 @@ close (localfd);
 send_txt (request.fd, "it worked");
 free (encoded.p);
 free (decoded.p);
+
+
 return 1;
 
 } //post edit
@@ -1034,7 +1038,7 @@ if (request.procint > 0)
 {
 int startdata = 0, enddata = 0;
 char fname [nameholder];
-charfull_path [string_sz];
+charfull_path [strig_sz];
 int d1 = 0, d2 = 0;
 read_progress = request.mainbuff->len - request.procint + request.codelen + 2;	
 printf ("data started in first xmission: %d / %l\n", read_progress, request.content_len);

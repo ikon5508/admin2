@@ -80,7 +80,7 @@ tail = d1 + 1;
 buffer_t out = init_buffer (req_len);
 memset (out.p, 0, req_len);
 int i = 0;
-tail = -1;
+tail = 0;
 for (i = 0; i < inst_count; ++i)
 {
 
@@ -121,13 +121,37 @@ killme ("unhandled instruction");
 
 ///printf ("req_len: %d, ou.len: %d\n", req_len, out.len);
 
-int len = req_len - out.len +1;
+int len = req_len - out.len;
 if (len > 0) {
 memcpy (out.p + out.len, in.p + tail +1, len);
 out.len += len;
 printf ("added!!\n");
 }else{
-printf ("len is 0\n");
+
+switch (inst[inst_count -1].dchar) {
+
+case 'n':
+	out.p[out.len] = 10;
+
+break;
+case 92:
+	out.p[out.len] = 92;
+
+break;
+case  '\"':
+	out.p[out.len] = '\"';
+
+break;
+case '\'':
+	out.p[out.len] = '\'';
+
+break;
+case  't':
+	out.p[out.len] = 9;
+}
+printf ("len is 0last dchar %d[%c]\n", inst[inst_count -1].dchar, inst[inst_count -1].dchar);
+
+++out.len;
 }
 
 
@@ -292,9 +316,10 @@ pos = inst[i].pos;
 
 
 int len = in.len - pos - 2;
+if (len > 0) {
 memcpy (out.p + out.len, in.p + pos + 1, len);
 out.len += len;
-
+}
 //printf ("out-> [%.*s]\n", out->len, out->p);
 free (inst);
 //free (in.p);
