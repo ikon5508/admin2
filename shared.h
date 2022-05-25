@@ -11,8 +11,7 @@
 #define mdbuff_sz 10000
 #define lgbuff_sz 100000
 
-
-struct blueprint {
+struct codeco {
 int pos;
 char dchar;
 };
@@ -40,8 +39,10 @@ int extract_CC (const buffer_t src, char *ex, const int exmax, const char d1, co
 struct buffer_data init_buffer (const int sz);
 void buffcatf (struct buffer_data *buff, const char *format, ...);
 
-void stopwatch_start (stopwatch_t *t);
-void stopwatch_stop (stopwatch_t *t);
+void build_template (buffer_t *buff, const int ents, ...);
+
+//void stopwatch_start (stopwatch_t *t);
+//void stopwatch_stop (stopwatch_t *t);
 //void result (int *sec, int *ms);
 
 
@@ -59,7 +60,6 @@ void trim (char *totrim);
 
 buffer_t JSON_decode (const buffer_t in);
 void buffer_sanity (buffer_t *buff, const int req, const int inc);
-void HTML_encode2 (const buffer_t in, buffer_t *out, const int level);
 buffer_t HTML_encode (const buffer_t in, const int level);
 
 int URL_decode (const char *in, char *out);

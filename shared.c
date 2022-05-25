@@ -4,6 +4,43 @@
 #include <stdlib.h>
 #include <stdarg.h>
 
+void build_template (buffer_t *buff, const int ents, ...)
+{
+va_list ap;
+va_start (ap, ents);
+
+int d;
+char c;
+char *s;
+
+struct ent_table {
+char *delim;
+int pos;
+char *rep;
+int replen;
+
+struct ent_table *next;
+}entries[ents];
+
+for (int i = 0; i < ents; ++i)
+{
+
+entries[i].delim = va_arg(ap, char *);
+
+entries[i].rep = va_arg(ap, char *);
+
+entries[i].replen = strlen (entries[i].rep);
+} // for
+
+
+for (int i = 0; i < ents; ++i)
+{
+printf ("%d: delim: %s, rep: %s, replen: %d\n", i, entries[i].delim, entries[i].rep, entries[i].replen);
+
+}
+} // build_template
+
+
 buffer_t JSON_decode (const buffer_t in)
 {
 int tail = 0;
@@ -13,7 +50,7 @@ const int increment = 200;
 int inst_max = increment;
 int inst_count = 0;
 
-struct blueprint *inst = (struct blueprint *)  malloc (inst_max * sizeof (struct blueprint));
+struct codeco *inst = (struct codeco *)  malloc (inst_max * sizeof (struct codeco));
 if (inst == NULL) killme ("no malloc");
 
 //for (int i = 0; i < 100; ++i)
@@ -26,7 +63,7 @@ if (inst_count == inst_max)
 {
 inst_max += increment;
 printf ("resizing instruction array\n");
-inst = realloc (inst, sizeof (struct blueprint) * inst_max);
+inst = realloc (inst, sizeof (struct codeco) * inst_max);
 if (inst == NULL) killme ("no realloc");
 } //if
 
@@ -68,7 +105,12 @@ req_len -= 1;
 
 break;
 default:
-printf ("unhandled escape delimeter char: %c\n", dchar); exit (0);
+printf ("unhandled escape delimeter char: [%d]%c\n", d1, dchar);
+char temp [smbuff_sz];
+memset (temp, 0, default_sz);
+memcpy (temp, in.p + d1 - 80,160);
+printf ("samp [%s]\n", temp);
+exit (0);
 } // end switch
 
 tail = d1 + 1;
@@ -197,7 +239,7 @@ const int increment = 500;
 int inst_max = increment;
 int inst_count = 0;
 
-struct blueprint *inst = (struct blueprint *)  malloc (inst_max * sizeof (struct blueprint));
+struct codeco *inst = (struct codeco *)  malloc (inst_max * sizeof (struct codeco));
 if (inst == NULL) killme ("no malloc");
 int req_len = in.len;
 printf ("in.len: %d\n", in.len);
@@ -213,7 +255,7 @@ if (inst_count == inst_max)
 {
 inst_max += increment;
 printf ("resizing instruction array\n");
-inst = realloc (inst, sizeof (struct blueprint) * inst_max);
+inst = realloc (inst, sizeof (struct codeco) * inst_max);
 if (inst == NULL) killme ("no realloc");
 } //if
 
@@ -455,7 +497,7 @@ printf ("temp %d [%.*s]\n", templen, templen, temp);
 // do overflow protection
 int req_len = d1 + templen + rep.len;
 if (req_len > base->max) {
-printf ("req len: %d, base->max: %d-resizing buffer\n", req_len, base->max);
+//printf ("req len: %d, base->max: %d-resizing buffer\n", req_len, base->max);
 int diff = req_len - base->max;
 int needed = base->max + req_len;
 
@@ -537,7 +579,7 @@ pos = offset + 1;
 
 } // while
 
-len = strlen(format) - pos;
+len = formatlen - pos;
 buffer_sanity (buff, len, len);
 memcpy (buff->p + buff->len, format + pos, len);
 buff->len += len;
@@ -558,148 +600,6 @@ entry [len] = 0;
 
 } // buffcatf
 
-void HTML_encode2 (const buffer_t in, buffer_t *out, const int level)
-{
-//const buffer_t in = *((buffer_t *) buff);
-
-int d1 = 0;
-int d2 = 0;
-char lastc = 0;
-
-char searchstr[10];
-if (level == 1)
-{
-lastc = 0;
-strcpy (searchstr, "<>");
-
-}else if  (level == 2) {
-lastc = '\n';
-strcpy (searchstr, "<>\n");
-} // if
-
-
-//printf ("%s\n\n", in.p);
-const int increment = 200;
-int inst_max = increment;
-int inst_count = 0;
-
-struct blueprint *inst = (struct blueprint *)  malloc (inst_max * sizeof (struct blueprint));
-if (inst == NULL) killme ("no malloc");
-int req_len = in.len;
-
-while (1)
-{
-char *p1 = strpbrk (in.p + d1, searchstr);
-if (p1 == NULL) break ;
-
-if (inst_count == inst_max)
-{
-inst_max += increment;
-printf ("resizing instruction array\n");
-inst = realloc (inst, sizeof (struct blueprint) * inst_max);
-if (inst == NULL) killme ("no realloc");
-} //if
-
-d2 = p1 - in.p;
-char dchar = in.p[d2];
-switch (dchar) {
-
-case '<':
-inst [inst_count].pos = d2;
-inst [inst_count].dchar = in.p[d2];
-++inst_count;
-req_len += 4;
-break;
-
-case '>':
-inst [inst_count].pos = d2;
-inst [inst_count].dchar = in.p[d2];
-++inst_count;
-req_len += 4;
-break;
-
-
-default :
-
-if (lastc == dchar) {
-inst [inst_count].pos = d2;
-inst [inst_count].dchar = in.p[d2];
-++inst_count;
-req_len += 4;
-}
-}// switch
-
-d1 = d2 + 1;
-} // first loop
-
-//printf ("inst_cout: %d, in_len: %d, req_len: %d\n", inst_count, in.len, req_len);
-if (out->max == 0)
-{
-//printf ("buffer not allocated\n");
-out->p = malloc (req_len);
-if (out->p == NULL) killme ("no malloc");
-}else if (out->max < req_len) {
-
-//printf ("buffer too small\n");
-out->p = realloc (out->p, req_len);
-if (out->p == NULL) killme ("no realloc");
-}
-
-int pos = -1;
-for (int i = 0; i < inst_count; ++i)
-{
-//printf ("#d %d: pos %d: dchar: %c\n", i, inst[i].pos, inst[i].dchar);
-
-
-int len = inst[i].pos - pos - 1;
-//memcpy (temp, in.p + pos + 1, len);
-memcpy (out->p + out->len, in.p + pos + 1, len);
-out->len += len;
-
-char dchar = inst[i].dchar;
-switch (dchar) {
-
-case '<':
-out->p[out->len] = '&';
-out->p[out->len + 1] = 'l';
-out->p[out->len + 2] = 't';
-out->p[out->len + 3] = ';';
-out->len += 4;
-break;
-
-case '>':
-out->p[out->len] = '&';
-out->p[out->len + 1] = 'g';
-out->p[out->len + 2] = 't';
-out->p[out->len + 3] = ';';
-out->len += 4;
-break;
-default:
-
-
-if (lastc == dchar) {
-out->p[out->len] = '<';
-out->p[out->len + 1] = 'b';
-out->p[out->len + 2] = 'r';
-out->p[out->len + 3] = '>';
-out->len += 4;
-
-}
-
-} // switch
-pos = inst[i].pos;
-
-} //for
-
-
-int len = in.len - pos - 2;
-memcpy (out->p + out->len, in.p + pos + 1, len);
-out->len += len;
-
-//printf ("out-> [%.*s]\n", out->len, out->p);
-free (inst);
-
-} // end HTML encode2
 
 int strsearch (const char *main, const char *minor, const int start)
 {
@@ -858,17 +758,12 @@ exit(0);
 
 char *parse_line (char *dest, const char *src)
 { // bm parse_line 
-   char *rtn = (char *) strchr (src, 10);
-    if (rtn == NULL) return NULL;
-   
-   
-   int len = rtn - src;
-    
-    memcpy (dest, src, len);
-    
-    dest [len] = 0;
-    
-    return rtn +1;
+char *rtn = (char *) strchr (src, 10);
+if (rtn == NULL) return NULL;
+int len = rtn - src;
+memcpy (dest, src, len);
+dest [len] = 0;
+return rtn +1;
  
 } // parse_line
 

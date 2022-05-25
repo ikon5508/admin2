@@ -19,6 +19,7 @@
 
 #include <poll.h>
 
+#define upload_mode "/upload"
 #define edit_mode "/edit"
 #define action_mode "/action"
 #define file_mode "/file"
@@ -56,8 +57,10 @@ const char *conttxt = "Content-Type: text/plain\n";
 const char *contjpg = "Content-Type: image/jpg\n";
 const char *contpng = "Content-Type: image/png\n";
 const char *contcss = "Content-Type: text/css\n";
-
+const char *contpdf = "Content-Type: application/pdf\n";
 const char *contmp4 = "Content-Type: video/mp4\n";
+
+const char *contoctet = "Content-Type: application/octet-stream\n";
 
 const char *connclose = "Connection: close\n";
 const char *connka = "Connection: timeout=5, max=10\n";
@@ -88,7 +91,7 @@ struct request_data
 {
 char url [string_sz];
 char url_params [string_sz];
-
+const char *mode_text;
 char path [string_sz];
 char full_path [string_sz];
 
@@ -99,14 +102,6 @@ unsigned long content_len;
 const struct buffer_data *mainbuff;
 char method;
 int fd;
-
-//int procint;
-//int content_len;
-//char *procpnt;
-
-//char user_agent [200];
-//char code [100];
-//int codelen;
 enum emode mode;
 enum rtype type;
 };

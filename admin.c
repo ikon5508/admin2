@@ -6,6 +6,7 @@
 #define action_mode "/action"
 #define file_mode "/file"
 
+const int upload_mode_len = strlen (upload_mode);
 const int file_mode_len = strlen (file_mode);
 const int action_mode_len = strlen (action_mode);
 const int edit_mode_len = strlen (edit_mode);
@@ -467,8 +468,102 @@ if (request.mode == edit)
 } // main loop
 } // main
 
+
 int serv_dir (const struct request_data request)
+{ // bm serv_dir
+const char *template_path = "dir.htm";
+char temp_path [smbuff_sz];
+
+snprintf (temp_path, smbuff_sz, "%s/%s", settings.internal, template_path);
+
+struct stat finfo;
+if (stat (temp_path, &finfo) != 0)
+	{send_txt (request.fd, "cant stat dir template"); return 0;}
+
+buffer_t dir_template = init_buffer (finfo.st_size);
+int dirfd = open (temp_path, O_RDONLY);
+if (dirfd < 0) {send_txt (request.fd, "cannot open dir template"); return 0;}
+dir_template.len = read (dirfd, dir_template.p, dir_template.max);
+close (dirfd);
+
+
+DIR *dp;
+struct dirent *ep;
+
+buffer_t dir_list = init_buffer (lgbuff_sz);
+
+dp = opendir (request.full_path);
+printf ("fullpath: [%s]\n", request.full_path);
+if (dp == NULL)
+	{send_txt (request.fd, "OOPS"); return -1;}
+
+while ((ep = readdir (dp)))
 {
+if (ep->d_name[0] == '.')
+	continue;
+	
+// 4 is dir 8 is file
+printf ("dir: %s\n", ep->d_name);
+
+if (ep->d_type == 4)
+
+(request.url[strlen (request.url) - 1] == '/')?
+buffcatf (&dir_list, "<a href=\"%s%s\">%s/</a><br>\n", request.url, ep->d_name, ep->d_name):
+buffcatf (&dir_list, "<a href=\"%s/%s\">%s/</a><br>\n", request.url, ep->d_name, ep->d_name);
+
+//printf ("char: %c, dirname is: %s\n", request.url[strlen (request.url) - 1], request.url.p);
+} // while
+
+closedir (dp);
+dp = opendir (request.full_path);
+
+while ((ep = readdir (dp)))
+{
+if (ep->d_name[0] == '.')
+	continue;
+	
+if (ep->d_type == 8)
+
+if (settings.showaction > 0)	
+(request.url[strlen (request.url) - 1] == '/')?
+buffcatf (&dir_list, "<a href=\"/action%s%s\">%s</a><br>\n", request.path, ep->d_name, ep->d_name):
+buffcatf (&dir_list, "<a href=\"/action%s/%s\">%s</a><br>\n", request.path, ep->d_name, ep->d_name);
+
+
+if (settings.showaction == 0)	
+(request.url[strlen (request.url) - 1] == '/')?
+buffcatf (&dir_list, "<a href=\"/file%s%s\">%s</a><br>\n", request.path, ep->d_name, ep->d_name):
+buffcatf (&dir_list, "<a href=\"/file%s/%s\">%s</a><br>\n", request.path, ep->d_name, ep->d_name);
+
+
+} // while
+
+//<!--linklist-->
+
+FAR (&dir_template, "<!--linklist-->", dir_list);
+
+
+struct string_data head;
+
+head.len = sprintf (head.p, "%s%s%s%d\n\n", hthead, conthtml, contlen, dir_template.len);
+sock_writeold (request.fd, head.p, head.len);
+sock_buffwrite (request.fd, &dir_template);
+
+
+
+closedir (dp);
+save_buffer (dir_list, "dir_list.txt");
+save_buffer (dir_template, "dir_template.txt");
+
+
+free (dir_template.p);
+free (dir_list.p);
+return 1;
+
+} // serv_dir
+
+int serv_dirold (const struct request_data request)
+{//bm serv_dirold
 DIR *dp;
 struct dirent *ep;
 
@@ -535,7 +630,6 @@ if (ep->d_name[0] == '.')
 	continue;
 	
 // 4 is dir 8 is file
-printf ("dir: %s\n", ep->d_name);
 
 if (ep->d_type == 4)
 
@@ -592,19 +686,8 @@ return 1;
 
 int serv_file (const struct request_data request)
 {
-//int dot = getlast (request.path, (int) '.', strlen (request.path));
-//char outbuffer [string_sz];
 struct string_data outbuff;
-//outbuff.p = outbuffer;
-//outbuff.len = 0;
-//outbuff.max = string_sz;
-
-//char request.ext[10] = "";
 const char *mime_txt;
-
-//strncpy (request.ext, request.path + dot, strlen (request.path) - dot);
-
-//int i = 0;
 
 if (strcmp(request.ext, ".txt") == 0) {
 mime_txt = conttxt;
@@ -636,7 +719,10 @@ mime_txt = contpng;
 }else if (strcmp(request.ext, ".mp4") == 0) {
 mime_txt = contmp4;
 
-}else {mime_txt = conttxt;}
+}else if (strcmp(request.ext, ".pdf") == 0) {
+mime_txt = contpdf;
+
+}else {mime_txt = contoctet;}
 
 //printf ("%s\n", mime_txt);
 
@@ -687,19 +773,33 @@ p1 = strstr (request->url, edit_mode);
 if (p1 != NULL) {
 path_start = edit_mode_len;
 request->mode = edit;
+request->mode_text = edit_mode;
 } // if edit_mode
 
 p1 = strstr (request->url, action_mode);
 if (p1 != NULL) {
 path_start = action_mode_len;
 request->mode = action;
+request->mode_text = action_mode;
 } // if action_mode
 
 p1 = strstr (request->url, file_mode);
 if (p1 != NULL) {
 path_start = file_mode_len;
 request->mode = file;
-} // if action_mode
+request->mode_text = file_mode;
+
+    
+} // if file_mode
+
+p1 = strstr (request->url, upload_mode);
+if (p1 != NULL) {
+path_start = upload_mode_len;
+request->mode = file;
+request->mode_text = upload_mode;
+
+} // if upload_mode
+
 
 char encoded_url [smbuff_sz];
 int path_len = path_end - path_start;
@@ -842,18 +942,23 @@ buffcatf (&bookmarks, "<option value=\"%d\">%s</option>\n", linecount, bm);
 } // while
 buffcatf (&bookmarks, "</select>\n");
 save_buffer (bookmarks, "bookmarks.txt");
-int req_len = editor.len + filedata.len + bookmarks.len;
+int req_len = editor.len + bookmarks.len;
 
-//editor.p = realloc (editor.p, req_len);
-//if (editor.p == NULL) killme ("no realloc");
-//editor.max = req_len;
+//int req_len = editor.len;
+editor.p = realloc (editor.p, req_len);
+if (editor.p == NULL) killme ("no realloc");
+editor.max = req_len;
 FAR (&editor, "<!--bookmarks-->", bookmarks);
-//buffer_t encoded = init_buffer (0);
-buffer_t encoded = HTML_encode (filedata, 1);
-save_buffer (encoded, "encodedhtm.txt");
-FAR (&editor, "DELIMETER", encoded);
 
-save_buffer (editor, "editor.txt");
+//buffer_t encoded = init_buffer (0);
+//buffer_t encoded = HTML_encode (filedata, 1);
+//save_buffer (encoded, "encodedhtm.txt");
+
+buffer_t tempb = init_buffer (smbuff_sz);
+strcpy (tempb.p, request.path);
+tempb.len = strlen (request.path);
+FAR (&editor, "RESOURCE_PATH", tempb);
+
 struct string_data head;
 head.len = sprintf (head.p, "%s%s%s%d\n\n", hthead, conthtml, contlen, editor.len);
 
@@ -866,7 +971,7 @@ save_buffer (editor, "get_edit.txt");
 
 free (filedata.p);
 free (editor.p);
-free (encoded.p);
+free (tempb.p);
 free (bookmarks.p);
 //send_txt (request.fd, "wow");
 
@@ -886,7 +991,7 @@ int post_edit (const struct request_data request)
 int progress = 0;
 
 buffer_t encoded = init_buffer (request.content_len);
-//memset (encoded.p, 0, encoded.max);
+//memset (encoded.p, 0, encoded.max)
 
 char *p1 = strchr (request.mainbuff->p, (int) '\"');
 if (p1 != NULL) {
@@ -896,7 +1001,7 @@ memcpy (encoded.p, request.mainbuff->p + d1, request.mainbuff->len - d1);
 encoded.len = request.mainbuff->len - d1;
 progress = request.mainbuff->len - d1;
 }
-//printf ("content en: %lu, progress: %d\n", request.content_len, encoded.len);
+//printf ("content en: %u, progress: %d\n", request.content_len, encoded.len);
 
 /*
 if (request.content_len == progress) {
@@ -917,9 +1022,10 @@ save_buffer (encoded, "JSONencoded.txt");
 
 char backup [string_sz];
 strcpy (backup, "old/");
+strcat (backup, "%H:%M-");
 strcat (backup, request.filename);
-strcat (backup, "-%H:%M");
-strcat (backup, request.ext);
+
+//strcat (backup, request.ext);
 
 time_t t;
 struct tm *tmp;
@@ -931,8 +1037,8 @@ if (strftime(outstr, sizeof(outstr), backup, tmp) == 0)
 { fprintf(stderr, "strftime returnd 0"); exit(EXIT_FAILURE); } 
 printf ("backup name [%s]\n", outstr);
 
-if (rename (request.full_path, outstr) == -1)
-	printf ("error moving backup file\n");
+//if (rename (request.full_path, outstr) == -1)
+//	printf ("error moving backup file\n");
 
 buffer_t decoded = JSON_decode (encoded);
 
@@ -1728,4 +1834,10 @@ write (localfd, b.p, b.len);
 
 close (localfd);
 }// save_page
+
+
+
+
+
+
 
