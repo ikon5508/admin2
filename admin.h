@@ -7,10 +7,6 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <netinet/tcp.h>
-#include <fcntl.h>
-#include <unistd.h>
-#include <sys/types.h>
-#include <sys/stat.h>
 #include <string.h>
 #include <time.h>
 #include <netdb.h>
@@ -19,15 +15,11 @@
 
 #include <poll.h>
 
-#define upload_mode "/upload"
-#define edit_mode "/edit"
-#define action_mode "/action"
-#define file_mode "/file"
 
 #define sendfileunit 10000000
 #define maxbuffer 100000
 #define nameholder 100
-#define string_sz 1000
+#define string_sz 2048
 //#define entry 500
 
 
@@ -106,6 +98,26 @@ enum emode mode;
 enum rtype type;
 };
 
+struct post_file_data {
+char boundary [default_sz];
+int boundary_len;
+unsigned long fsize;
+unsigned long content_prog;
+char fname [default_sz];
+int stat_fname;
+int loopint;
+
+int fd;
+int offset;
+
+}; // post file data
+
+
+
+int get_fname (struct post_file_data *filedata, const buffer_t inbuff);
+
+int get_boundary (struct post_file_data *filedata, const buffer_t inbuff); 
+
 void softclose (const int fd, struct buffer_data *inbuff);
 
 int getnext (const char *base, const int c, const int offset, const int len);
@@ -116,7 +128,7 @@ int sock_buffwrite (const int connfd, struct buffer_data *out);
 int prepsocket (const int PORT);
 int sock_setnonblock (const int fd);
 int sock_writeold (const int connfd, const char *buffer, const int size);
-int sock_read (const int connfd, char *buffer, int size);
+int sock_read (const int connfd, void *buffer, int size);
 int sock_write (const int connfd, char *out, const int len);
 
 int send_file (const char *path, const int fd);
@@ -139,4 +151,8 @@ int process_request (struct request_data *request, const int fd, const struct bu
 int post_edit (const struct request_data request);
 int get_edit (const struct request_data request);
 int get_config (const struct settings_data settings, const struct request_data request);
-int put_file (const struct request_data request);
+//int post_file (const struct request_data request);
+
+
+
+

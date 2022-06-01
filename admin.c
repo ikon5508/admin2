@@ -2,6 +2,8 @@
 #include <signal.h>
 #include <openssl/sha.h>
 #include <poll.h>
+
+#define upload_mode "/in"
 #define edit_mode "/edit"
 #define action_mode "/action"
 #define file_mode "/file"
@@ -10,6 +12,7 @@ const int upload_mode_len = strlen (upload_mode);
 const int file_mode_len = strlen (file_mode);
 const int action_mode_len = strlen (action_mode);
 const int edit_mode_len = strlen (edit_mode);
+
 const char  BOOKMARK [] = {'/', '/', ' ', 'b', 'm', ' '};
 
 const int timeout = 3;
@@ -378,7 +381,7 @@ sock_setnonblock (connfd);
 
 char str[INET_ADDRSTRLEN];
   inet_ntop(address.sin_family, &address.sin_addr, str, INET_ADDRSTRLEN);
-printf("new connection from %s:%d\n", str, ntohs(address.sin_port));
+printf("new connection from (%d) %s:%d\n", connfd, str, ntohs(address.sin_port));
 
 
 // keep alive loop
@@ -389,6 +392,7 @@ if (inbuff.len == -1)
 { printf ("client timed out (main-loop)\n");  close (connfd); break; }
 inbuff.p[inbuff.len] = 0;
 
+struct post_file_data filedata;
 struct request_data request;
 int ret = process_request (&request, connfd, inbuff);
 if (ret == 0) {close (connfd); break;}
@@ -432,6 +436,9 @@ break;
 case favicon:
 	servico (connfd);
 
+//break;
+//case upload:
+
 break;
 case err:
 	send_err (connfd, 410);
@@ -445,28 +452,313 @@ printf ("default\n");
 } else if (request.method == 'P') {
 printf ("POST: %s\n", request.url);
 
-if (request.mode == edit)
-	post_edit (request);
+switch (request.mode) {
+case edit:
+ 	post_edit (request);
+
+break;
+case upload:
+//	post_file (request);
+//printf ("[%s]\n", inbuff.p);
+memset (&filedata, 0, sizeof (struct post_file_data));
+
+int rtn = get_boundary (&filedata, inbuff);
+if (!rtn) {printf ("unable to get boundary\n"); goto make_dead;}
+//printf ("boundary is: [%s]\n", file_data.boundary);
+
+rtn = get_fname (&filedata, inbuff);
+if (!rtn) printf ("didn't locate filename...with head\n");
 
 
-//if (request.method == 'U' && request.mode == edit)
-//	procint = put_edit (request);
+filedata.loopint = 1;
 
-//if (request.method == 'O' && request.mode == upload)
-//	procint = put_file (request);
-//if (request.method == 'U' && request.mode == upload)
-//	procint = put_file (request);
+filedata.offset = 0;
+while (filedata.content_prog < request.content_len)
+{
+inbuff.len = sock_read (connfd, inbuff.p, inbuff.max);
+if (inbuff.len == -1)  {printf ("timed out recieving\n"); goto make_dead;}
+if (filedata.stat_fname == 0) 
+if (get_fname (&filedata, inbuff) == -1) killme ("critical error");
+write (filedata.fd, inbuff.p, inbuff.len);
+filedata.content_prog += inbuff.len;  
+filedata.fsize += inbuff.len;
+printf ("\rrecieving %lu / %lu", filedata.content_prog, request.content_len); 
+} // reader loop
 
-//    procint = post_action (request, inbuff);
+printf ("\ndone recieving\n");
+unsigned long final = (filedata.fsize - filedata.boundary_len - 8);
 
+ftruncate (filedata.fd, final);
+
+char temp [smbuff_sz] = "";
+sprintf (temp, "file saved: %lu\n", final);
+printf ("%s", temp);
+send_txt (connfd, temp);
+
+close (connfd);
+break;
+default:
+	send_txt (connfd, "Unhandled mode");
+
+} // switch
 //{ softclose (connfd, &inbuff); break;}
 
 } // else if POST
 
 
 } // keep alive loop
+make_dead:;
+ close (connfd); 
+// need to mamage connection, but must be through handling functions?
 } // main loop
 } // main
+
+/*
+int end_boundary (struct post_file_data *filedata, const buffer_t inbuff)
+{ // bm end boundary
+    
+} // end boundary
+*/
+int get_fname (struct post_file_data *filedata, const buffer_t inbuff)
+{ // bm get_fname
+if (filedata->stat_fname) return 0; // if file already open return;
+int offset = filedata->offset;
+
+if (filedata->loopint == 0) {
+char *bp = memmem (inbuff.p + offset, inbuff.len - offset, filedata->boundary, filedata->boundary_len);
+if (bp != NULL){
+int tempoffset = bp - inbuff.p;
+filedata->content_prog = inbuff.len - tempoffset + 2;
+//printf ("adjusted content progress for data started within head: %lu\n", filedata->content_prog);
+}else return 0;
+} // if first loop, make sure content prog is set properly
+
+char *p1 = (char *) memmem (inbuff.p + offset, inbuff.len - offset, "filename=", 9);
+if (p1 == NULL)  return -1;
+int start = p1 - inbuff.p + 10;
+char *p2 = (char *) memchr (inbuff.p + start, 10, inbuff.len - start);
+if (p2 == NULL ) return -1;
+
+int end = p2 - inbuff.p;
+int len = end - start - 2;
+
+//offset = end;
+//get rid of MIME data included from browser
+end += 15;
+p1 = (char *) memchr (inbuff.p + end, 10, inbuff.len - end);
+if (p1 == NULL) {return 0;}
+filedata->offset = p1 - inbuff.p + 3;
+
+memcpy (filedata->fname, inbuff.p + start, len);
+filedata->stat_fname = 1;
+
+char fullpath [smbuff_sz];
+sprintf (fullpath, "testdir/%s", filedata->fname);
+
+int fd = open (fullpath, O_WRONLY | O_TRUNC| O_CREAT, S_IRUSR | S_IWUSR);
+if (fd < 0) killme ("unable to open new file 523");
+
+filedata->fsize = write (fd, inbuff.p + filedata->offset, inbuff.len - filedata->offset);
+
+filedata->fd = fd;
+
+//printf ("file name: [%s]\n", filedata->fname);
+
+return 1;
+} // get fname
+
+int get_boundary (struct post_file_data *filedata, const buffer_t inbuff) 
+{ // bm get_boundary
+
+char *boundary_p1 = (char *) memmem (inbuff.p, inbuff.len, "boundary=", 9);
+if (boundary_p1 == NULL) {return 0;}
+int start = boundary_p1 - inbuff.p;
+
+char *len_p = (char *) memchr (inbuff.p + start, 10, inbuff.len - start);
+if (len_p == NULL) {return 0;}
+int len = len_p - boundary_p1;
+
+filedata->offset = len_p - inbuff.p;
+memcpy (filedata->boundary, inbuff.p + start + 9, len - 9);
+filedata->boundary_len = trim (filedata->boundary);
+
+return 1;
+} // get boundary
+
+/*
+int post_file2 (const struct request_data request)
+{ // bm post_file
+// at present, not reading whole file, and still saving the complete file
+// some how!!!
+
+//printf ("post file!!\n%s\n\n", request.mainbuff->p);
+char boundary [default_sz] = "";
+int boundary_len = 0;
+int offset = 0;
+{
+//char *filelen = NULL;
+char *boundary_p1 = (char *) memmem (request.mainbuff->p, request.mainbuff->len, "boundary=", 9);
+if (boundary_p1 == NULL) {printf ("boundary not found\n"); return 0;}
+int start = boundary_p1 - request.mainbuff->p;
+
+char *len_p = (char *) memchr (boundary_p1, 10, request.mainbuff->len - start);
+if (len_p == NULL) {printf ("no end of boundary!!!\n"); return 0;}
+
+int end = len_p - boundary_p1;
+offset = len_p - request.mainbuff->p;
+memcpy (boundary, boundary_p1 + 9, end - 9);
+boundary_len = trim (boundary);
+} // bm boundary logic
+//printf ("boundary is: [%s]\n", boundary);
+
+int fd = 0;
+unsigned long fsize;
+int filenum = 0;
+int file_count = -1;
+int filelen_offset = 0;
+char filelen_data [smbuff_sz] = "";
+int filelen_data_len = 0;
+unsigned long content_prog = 0;
+unsigned long file_prog = 0;
+//const int reciever_unit = 150000000; // 150 MB
+const int reciever_unit = 50000000; // 50 MB
+
+// set inbuff to content_len or reciever unit....whichever is smaller
+buffer_t inbuff; 
+if (request.content_len < reciever_unit) {
+inbuff = init_buffer (request.content_len);
+}else{inbuff = init_buffer (reciever_unit);}
+
+struct b {
+unsigned char *p;
+int len;
+int procint;
+int max;
+}inbuff;
+memset (inbuff.p, 0, inbuff.max);
+inbuff.p = (unsigned char *) calloc (1, reciever_unit);
+if (inbuff.p == NULL) killme ("malloc 529");
+
+char *res = (char *) memmem (request.mainbuff->p + offset + boundary_len, request.mainbuff->len - offset - boundary_len, boundary, boundary_len);
+if (res != NULL) {
+printf ("data started with head & does not include boundary\n");
+offset = res - request.mainbuff->p + boundary_len;
+
+int len = request.mainbuff->len - offset;
+
+memcpy (inbuff.p, request.mainbuff->p + offset, len);
+inbuff.len = len;
+inbuff.p[len] = 0;
+content_prog = len + boundary_len + 2;
+//printf ("Content of data included with head\n[%s]\n", inbuff.p);
+//save_buffer (inbuff, "post_file_inbuff.txt");
+} // if data started with head info
+
+
+while (content_prog < request.content_len) {
+int len  = sock_read (request.fd, inbuff.p + inbuff.len, smbuff_sz);
+if (len == -1) {printf ("read -1\n"); break;}
+if (len == 0) {printf ("read 0\n"); break;}
+content_prog += len;
+inbuff.len += len;
+printf ("\rreading from socket %lu : %lu\n", content_prog, request.content_len);
+//if ((inbuff.max - inbuff.len) < smbuff_sz) break;
+} // end reader loop
+
+unsigned char *p1 = memmem (inbuff.p + 5, inbuff.len -5, "fsize", 5);
+if (p1 == NULL) {printf ("unexpected input 540\n"); return 0;}
+//offset = p1 - inbuff.p + 8;
+int start = p1 - inbuff.p + 8;
+//printf ("start: %d\n", start);
+
+unsigned char *p2 = memmem (inbuff.p + start, inbuff.len - start, boundary, boundary_len);
+if (p2 == NULL) {printf ("unexpected input 544\n"); return 0;}
+offset = p2 - inbuff.p;
+//printf ("offset (end) %d\n", offset);
+int len = offset - start - 2;
+memcpy (filelen_data, inbuff.p + start, len);
+filelen_data_len = trim (filelen_data);
+//printf ("file len data [%s]\n", filelen_data);
+
+p1 = strchr (filelen_data, (int) ':');
+if (p1 == NULL) {printf ("unexpected input or 0 files? 570\n"); return (0);}
+
+filelen_offset = p1 - filelen_data;
+
+char temp [default_sz] = "";
+memcpy (temp, filelen_data, filelen_offset);
+
+printf ("file count: %s\n", temp);
+file_count = atoi (temp);
+
+
+p1 = memmem (inbuff.p + offset, inbuff.len - offset, "filename=", 9);
+if (p1 == NULL) {printf ("unexpected input 601\n"); return 0;}
+start = p1 - inbuff.p + 10;
+p2 = memchr (inbuff.p + start, 10, inbuff.len - start);
+if (p2 == NULL ) {printf ("unexpected input 604\n"); return 0;}
+
+int end = p2 - inbuff.p;
+len = end - start - 2;
+offset = end;
+//printf ("start - offset(end): [%d][%d]\n", start, offset);
+
+char fname [default_sz]  = "";
+memcpy (fname, inbuff.p + start, len);
+
+printf ("file name: [%s]\n", fname);
+
+char fullpath [smbuff_sz];
+snprintf (fullpath, smbuff_sz, "%s/%s", "testdir", fname);
+
+
+fd = open (fullpath, O_WRONLY | O_TRUNC| O_CREAT, S_IRUSR | S_IWUSR);
+if (fd < 0) killme ("unable to open new file 600");
+
+// get file length from data
+start = filelen_offset;
+// get fsize after fname
+p2 = strchr (filelen_data + start + 1, (int) ':');
+if (p2 == NULL) {filelen_offset = filelen_data_len;}
+else {filelen_offset = p2 - filelen_data;}
+
+memset (temp, 0, default_sz);
+memcpy (temp, filelen_data + start+1, filelen_offset - start-1);
+
+printf ("fsize: %s\n", temp);    
+fsize = atol (temp);    
+++filenum;
+
+// found filename, and file length, now open
+//get rid of MIME data included from browser
+offset += 15;
+p1 = memchr (inbuff.p + offset, 10, inbuff.len - offset);
+if (p1 == NULL) {printf ("unexpected 626\n"); return 0;}
+offset = p1 - inbuff.p + 2;
+
+//printf ("offset / len %d/%d\n", offset, inbuff.len);
+write (fd, inbuff.p + offset, fsize);
+close (fd);
+fd = 0;
+
+//printf ("inbuff [%.*s]\n", inbuff.len, inbuff.p);
+
+//save_buffer (inbuff, "saved_inbuff.txt");
+
+send_txt (request.fd, "recieve file here\n");
+
+//free (sock_buff.p); 
+free (inbuff.p);
+
+close (request.fd);
+
+return 1;
+}// post file
+
+*/
+
+
+
 
 
 int serv_dir (const struct request_data request)
@@ -493,7 +785,6 @@ struct dirent *ep;
 buffer_t dir_list = init_buffer (lgbuff_sz);
 
 dp = opendir (request.full_path);
-printf ("fullpath: [%s]\n", request.full_path);
 if (dp == NULL)
 	{send_txt (request.fd, "OOPS"); return -1;}
 
@@ -503,7 +794,6 @@ if (ep->d_name[0] == '.')
 	continue;
 	
 // 4 is dir 8 is file
-printf ("dir: %s\n", ep->d_name);
 
 if (ep->d_type == 4)
 
@@ -540,8 +830,14 @@ buffcatf (&dir_list, "<a href=\"/file%s/%s\">%s</a><br>\n", request.path, ep->d_
 
 //<!--linklist-->
 
-FAR (&dir_template, "<!--linklist-->", dir_list);
+buffer_t bdp;
+char cdp [smbuff_sz];
+strcpy (cdp, request.path);
+bdp.p = cdp;
+bdp.len = strlen (request.path);
 
+FAR (&dir_template, "<!--linklist-->", dir_list);
+FAR (&dir_template, "DIR_PATH", bdp);
 
 struct string_data head;
 
@@ -692,6 +988,18 @@ const char *mime_txt;
 if (strcmp(request.ext, ".txt") == 0) {
 mime_txt = conttxt;
 
+}else if (strcmp(request.ext, ".c") == 0) {
+mime_txt = conttxt;
+
+}else if (strcmp(request.ext, ".cpp") == 0) {
+mime_txt = conttxt;
+
+}else if (strcmp(request.ext, ".h") == 0) {
+mime_txt = conttxt;
+
+}else if (strcmp(request.ext, ".hpp") == 0) {
+mime_txt = conttxt;
+
 }else if (strcmp(request.ext, ".htm") == 0) { 
 mime_txt = conthtml;
 
@@ -766,7 +1074,6 @@ int path_start = 0;
 char *p1 = strchr (request->url, '?');
 if (p1 != NULL) {
 path_end = p1 - request->url;
-
 } // if uri params
 
 p1 = strstr (request->url, edit_mode);
@@ -788,18 +1095,14 @@ if (p1 != NULL) {
 path_start = file_mode_len;
 request->mode = file;
 request->mode_text = file_mode;
-
-    
 } // if file_mode
 
 p1 = strstr (request->url, upload_mode);
 if (p1 != NULL) {
 path_start = upload_mode_len;
-request->mode = file;
+request->mode = upload;
 request->mode_text = upload_mode;
-
 } // if upload_mode
-
 
 char encoded_url [smbuff_sz];
 int path_len = path_end - path_start;
@@ -850,7 +1153,7 @@ request->content_len = atol (temp);
 } //if post  get cont len
 
 //attempt to stat file for GET requests
-sprintf (request->full_path, "%s%s", settings.base_path, request->path);
+snprintf (request->full_path, smbuff_sz, "%s%s", settings.base_path, request->path);
 //printf ("statting regular file :[%s]\n", request->full_path);
 struct stat finfo;
 if (stat (request->full_path, &finfo) == 0)
@@ -865,7 +1168,7 @@ if (request->method == 'G') request->content_len = finfo.st_size;
 return 1;
 } // end if 
 
-sprintf (request->full_path, "%s%s", settings.internal, request->path);
+snprintf (request->full_path, smbuff_sz, "%s%s", settings.internal, request->path);
 //printf ("(alt) running stat on: %s\n", request->full_path);
 if (stat (request->full_path, &finfo) == 0)
 {
@@ -1037,8 +1340,8 @@ if (strftime(outstr, sizeof(outstr), backup, tmp) == 0)
 { fprintf(stderr, "strftime returnd 0"); exit(EXIT_FAILURE); } 
 printf ("backup name [%s]\n", outstr);
 
-//if (rename (request.full_path, outstr) == -1)
-//	printf ("error moving backup file\n");
+if (rename (request.full_path, outstr) == -1)
+	printf ("error moving backup file\n");
 
 buffer_t decoded = JSON_decode (encoded);
 
@@ -1116,296 +1419,12 @@ void safe_fname (const struct request_data request, const char *fname, char *rtn
  int copynum = 1;
  while (check == 0)
  {
-    sprintf (rtn, "%s/%d-%s",request.full_path, copynum, fname);  
+    sprintf (rtn, "%s/%s-%d",request.full_path, fname, copynum);  
       check = stat (rtn, &finfo);
 
       ++copynum;
  }// while
 }// safe_fname
-/*
-int put_file (const struct request_data request)
-{
-printf ("put_file commence\n");
-
-const int safename = 1;
-
-string fdata;
-fdata.len =-1;
-fdata.procint = 0;
-
-buffer audit;
-char ab[maxbuffer];
-audit.p = ab;
-audit.len = 0;
-audit.max = maxbuffer;
-
-
-int filecount = 0, filenum = 0;
-int fsize = 0, read_progress = 0;
-int file_progress = 0;
-int localfd = -1;
-
-if (request.procint > 0)
-{
-int stardata = 0, enddata = 0;
-char fname [nameholder];
-charfull_path [strig_sz];
-int d1 = 0, d2 = 0;
-read_progress = request.mainbuff->len - request.procint + request.codelen + 2;	
-printf ("data started in first xmission: %d / %l\n", read_progress, request.content_len);
-//find second boundary, place into d1
-
-  // find start of fdata place into d1
-d1 = getnext(request.mainbuff->p, '\"', request.procint, request.mainbuff->len);
-d1 = getnext(request.mainbuff->p, '\"', d1 +1, request.mainbuff->len);
-// attempt to find end of data
-d2 = getnext(request.mainbuff->p, 10, d1 +5, request.mainbuff->len);
-
-// for diagnostic purposes
-buffcatf (&audit, "mainbuff->\n", request.mainbuff->p);
-
-// diagnostics
-if (d2==-1)
-{
-//printf ("mainbuff proc fdata started and spans 1114\n");
-fdata.len=0;
-d2 = request.mainbuff->len;
-
-buffcatf (&audit, "fdata spans from mainbuff:\n");
-}
-else buffcatf (&audit, "fdata fully containedin mainbuff:\n");
-
-
-midstr (request.mainbuff->p, fdata.p, d1 +1, d2);
-enddata = d2;
-buffcatf (&audit, "1264 initial fdata: %s\n", fdata.p);
-
-if (fdata.len ==-1) // not started at all - fully constained in mainbuff
-{
-buffcatf (&audit, "complete fdata in first xmission\n");
-char sfsize [nameholder];
-
-ftrim (fdata.p);
-fdata.len = rtrim (fdata.p);
-buffcatf (&audit, "fdata trim: %s len: %d\n", fdata.p, fdata.len);
-fdata.procint = getnext (fdata.p, ':', 0, fdata.len);
-midstr (fdata.p, sfsize, 0, fdata.procint);
-buffcatf (&audit, "1275 (mainbuff): str_filecount: %s\n", sfsize);
-filecount = atoi (sfsize);
-
-buffcatf (&audit, "1278 (mainbuff) int_file count %d\n", filecount);
-} // if complete fdata in first xmission
-else if (fdata.len == 0) {buffcatf (&audit, "fdata spans buffer reads trigger 1132\n");goto multi;}
-
-buffcatf (&audit, "endata: %d bufflen: %d\n", enddata, request.mainbuff->len);
-if (enddata < request.mainbuff->len)
-{
-buffcatf (&audit, "additional data may be started in first xmission\n");
-//d1 = strsearch (request.mainbuff->p, request.code, enddata, request.mainbuff->len);
-//	if (d1==-1) {printf ("strsearch error 1118\n"); exit (0);}
-
-d1 = strsearch (request.mainbuff->p, "filename=\"", enddata, request.mainbuff->len);
-	if (d1==-1) {buffcatf (&audit, "1290, no files in first xmission, data within next xmission\n"); goto multi;}
-d2 = getnext (request.mainbuff->p, '\"', d1 + 1, request.mainbuff->len);
-	if (d2==-1) {printf ("strsearch error 1292\n"); exit (0);}
-
-midstr (request.mainbuff->p, fname, d1, d2);
-buffcatf (&audit, "fname: %s\n", fname);
-
-startdata = getnext (request.mainbuff->p, '\n', d2 + 4, request.mainbuff->len);
-	if (startdata ==-1) {printf ("error 1298\n"); exit (0);}
-startdata += 3;
-
-if (safename) safe_fname (request, fname, full_path);
-else sprintf (full_path, "%s/%s",request.full_path, fname);
-
-localfd = open (full_path, O_WRONLY | O_TRUNC| O_CREAT, S_IRUSR | S_IWUSR);
-	if (localfd ==-1) {printf ("error 1160\n"); exit(0);}
-filenum = 1;
-fsize = get_nextsize (&fdata);
-buffcatf (&audit, "file opened: %s, %d: bytes\n", full_path, fsize);
-
-
-// if fsize smaller than remaining buffer
-d1 = request.mainbuff->len - startdata;
-if (fsize < d1)
-{
-write (localfd, request.mainbuff->p + startdata, fsize);
-close (localfd);
-localfd = -1;
-printf ("first file recieved, within first xmission\n");
-
-if (filecount == 1)
-{printf ("only one file to recieved, done, check\n");
-send_txt (request.fd, "only one small file to recieve, done");
-return 1;} // if no more files and all data transmitted in single xmission
-
-}else{ // else if fsizebigger than mainbuff
-// if first file spans first and multiple xmission
-enddata = request.mainbuff->len - startdata;
-write (localfd, request.mainbuff->p + startdata, enddata);
-file_progress = enddata;
-buffcatf (&audit, "first file started in main, spans frames, %d\n", file_progress);
-
-    
-} // if file single / multi reciever 
-
-} // if file(s) started aftr fdata
-
-
-//long fsize = get_nextsize (fdata)
-} // if procint > 0
-
-multi:printf("ahead to subsequent reads\n");
-
-struct ubuffer_data inbuff;
-unsigned char in [string_sz * 2];
-inbuff.p = in;
-inbuff.len = 0;
-inbuff.max = string_sz * 2;
-inbuff.procint = 0;
-
-// first check that fdata is completed
-if (fdata.len == 0 || fdata.len == -1)
-{
-buffcatf (&audit, "fdata incomplete\n");
-int startdata = 0, enddata = 0;
-char temp1 [nameholder];
-
-inbuff.len = usock_read (request.fd, inbuff.p, inbuff.max);
-if (inbuff.len ==-1){printf ("client timed out\n"); return -1;}
-read_progress += inbuff.len;
-
-if (fdata.len == -1)
-{
-buffcatf (&audit, "fdata not started at all\n");
-startdata = ustrsearch (inbuff.p, "name=\"fsize\"", 0, inbuff.len);
-if (startdata==-1) {printf ("error locating fdata 1240"); exit (0);}
-startdata += 3;
-} // if fdata not started at all
-
-enddata = ugetnext (inbuff.p, '\n', startdata + 1, inbuff.len);
-if (enddata ==-1) {printf ("1227 error locating fdata end\n"); exit (0);}
-inbuff.procint = enddata;
-
-umidstr (inbuff.p, fdata.p, startdata, enddata);
-
-ftrim (fdata.p);
-fdata.len = rtrim (fdata.p);
-buffcatf (&audit, "1235 fdata: %s, len: %d\n", fdata.p, fdata.len);
-
-fdata.procint = getnext (fdata.p, ':', 0, fdata.len);
-
-midstr (fdata.p, temp1, 0, fdata.procint);
-buffcatf (&audit, "str filecount: %s\n", temp1);
-filecount = atoi (temp1);
-buffcatf (&audit, "last iteration filecount: %d\n", filecount);
-} // if fdata incomplete
-
-save_buffer (audit, "auditbuffer.txt");
-
-// file reads now
-// do subsequent reads here
-
-while (read_progress < request.content_len || inbuff.procint > 0)
-{ // if reading done, but file data remains
-
-if (inbuff.procint > 0)
-{ // ifdata remains in buff
-int startdata = ustrsearch (inbuff.p, "filename=\"", inbuff.procint, inbuff.len);
-if (startdata ==-1) {inbuff.procint = 0; continue;}
-
-int enddata = ugetnext (inbuff.p, '\"', startdata +1, inbuff.len);
-if (enddata ==1)
-{printf ("not sure how this happened:\n"); exit (0);}
-
-char fname [nameholder];
-umidstr (inbuff.p, fname, startdata, enddata);
-
-char full_path [string_sz];
-//if (safename) safe_fname (request, fname, full_path);
-//else 
-sprintf (full_path, "%s/%s", request.full_path, fname);
-printf ("full_path: %s\n", full_path);
-
-localfd = open (full_path, O_WRONLY | O_TRUNC| O_CREAT, S_IRUSR | S_IWUSR);
-if (localfd ==-1) {printf ("error 1269\n"); exit(0);}
-
-fsize = get_nextsize (&fdata);
-filenum += 1;
-
-
-startdata = ugetnext (inbuff.p, '\n', enddata + 3, inbuff.len);
-startdata += 3;
-
-int leftover = inbuff.len - startdata;
-// check to write fsize or remaining buffer, set procint and continue;
-if (leftover > fsize)
-{
-write (localfd, inbuff.p + startdata, fsize);
-inbuff.procint = startdata;
-close (localfd);
-localfd = -1;
-continue;
-}else{
-write (localfd, inbuff.p + startdata, inbuff.len - startdata);
-file_progress = inbuff.len - startdata;
-//inbuff.len = 0;
-inbuff.procint = 0;
-} // fsize bigger, data spans
-} // if data remains in buff
-
-inbuff.len = usock_read (request.fd, inbuff.p, inbuff.max);
-if (inbuff.len ==-1){printf ("client timed out 1441\n"); return -1;}
-read_progress += inbuff.len;
-
-
-
-// if file already open
-if (localfd > 0)
-{
-write (localfd, inbuff.p, inbuff.len);
-file_progress += inbuff.len;
-
-if (file_progress > fsize)
-{
-printf ("closing: %d\n", filenum);
-ftruncate (localfd, fsize);
-close (localfd);
-localfd =-1;
-
-int leftover = file_progress - fsize;
-int offset = inbuff.len - leftover;
-
-memmove (inbuff.p, inbuff.p + offset, inbuff.len - offset);
-
-int newin = usock_read (request.fd, inbuff.p + offset, inbuff.max - offset);
-if (newin == -1) {printf ("newin read timeout\n"); return -1;}
-// a bit sloppy here....
-// needs future reivision
-inbuff.len += newin;
-
-inbuff.procint = 1;
-
-//inbuff.procint = inbuff.len - leftover;
-
-continue;
-} // if file done
-} // if file already open
-
-if (localfd == -1)
-{ inbuff.procint = 1;}
-
-} //w
-
-
-hile data remains
-
-send_txt (request.fd, "done");
-printf ("done\n");
-return 1;
-} // put_file
-*/
 
 int send_err (const int fd, const int code)
 {
@@ -1649,7 +1668,8 @@ int sock_setnonblock (const int fd)
 {
 if (fcntl(fd, F_SETFL, fcntl(fd, F_GETFL, 0) | O_NONBLOCK) == -1)
 {
-    perror("calling fcntl");
+printf ("bad FD, calling fcntl: %d\n", fd);
+perror("calling fcntl");
 
     return 0;
 } // if
@@ -1749,7 +1769,7 @@ return write (connfd, buffer, size);
 
 } // sock_write_old
 
-int sock_read (const int connfd, char *buffer, const int size)
+int sock_read (const int connfd, void *buffer, const int size)
 {
 struct pollfd ev;
 ev.fd = connfd;
@@ -1823,17 +1843,19 @@ return 1;
 } // sock_buffwrite
 
 
-void save_buffer (const struct buffer_data b, const char *path)
-{
-int localfd = open (path, O_WRONLY | O_TRUNC| O_CREAT, S_IRUSR | S_IWUSR);
-if (localfd < 0)
-	return ;
-
-write (localfd, b.p, b.len);
 
 
-close (localfd);
-}// save_page
+
+
+
+
+
+
+
+
+
+
+
 
 
 

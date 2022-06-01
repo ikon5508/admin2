@@ -3,11 +3,14 @@
 #define shared_h 
 #include <errno.h>
 
+#include <fcntl.h>
 #include <time.h>
-
+#include <unistd.h>
+#include <sys/types.h>
+#include <sys/stat.h>
 
 #define default_sz 128
-#define smbuff_sz 1000
+#define smbuff_sz 2048
 #define mdbuff_sz 10000
 #define lgbuff_sz 100000
 
@@ -33,7 +36,7 @@ int max;
 };
 typedef struct buffer_data buffer_t;
 
-//int extract_SC (const buffer_t src, char *ex, const int exmax, const char *d1, const char d2)
+int extract_SC (const buffer_t *src, char *ex, const int exmax, const char *d1, const char d2);
 int FAR (buffer_t *base, const char *delim, const buffer_t rep);
 int extract_CC (const buffer_t src, char *ex, const int exmax, const char d1, const char d2);
 struct buffer_data init_buffer (const int sz);
@@ -55,13 +58,15 @@ void err_ctl (const int rslt, const char *msg);
 void killme (const char *msg);
 char *parse_line (char *dest, const char *src);
 int split_value (char *, const char, char *);
-void trim (char *totrim);
+int trim (char *totrim);
 
+int utrim (unsigned char *totrim);
 
 buffer_t JSON_decode (const buffer_t in);
 void buffer_sanity (buffer_t *buff, const int req, const int inc);
 buffer_t HTML_encode (const buffer_t in, const int level);
 
+void save_buffer (const struct buffer_data b, const char *path);
 int URL_decode (const char *in, char *out);
 //typedef struct blueprint blueprint_t;
 

@@ -4,6 +4,9 @@
 #include <stdlib.h>
 #include <stdarg.h>
 
+
+// must search for multiple instances of delim
+// no worry about going in step, will largely be futile.
 void build_template (buffer_t *buff, const int ents, ...)
 {
 va_list ap;
@@ -22,22 +25,34 @@ int replen;
 struct ent_table *next;
 }entries[ents];
 
+int req_len = buff->len;
+
+printf ("%s\n", buff->p);
+
 for (int i = 0; i < ents; ++i)
 {
-
 entries[i].delim = va_arg(ap, char *);
-
 entries[i].rep = va_arg(ap, char *);
-
 entries[i].replen = strlen (entries[i].rep);
+int dlen = strlen (entries[i].delim);
+
+char *ret = (char *) memmem (buff->p, buff->len, entries[i].delim, dlen);
+if (ret != NULL) {
+entries[i].pos = ret - buff->p;
+req_len -= dlen;
+req_len += entries[i].replen;
+}else {entries[i].pos = -1;}
+
+
 } // for
 
 
 for (int i = 0; i < ents; ++i)
 {
-printf ("%d: delim: %s, rep: %s, replen: %d\n", i, entries[i].delim, entries[i].rep, entries[i].replen);
-
+printf ("%d: delim: %s, pos: %d, rep: %s, replen: %d\n", i, entries[i].delim, entries[i].pos, entries[i].rep, entries[i].replen);
 }
+
+
 } // build_template
 
 
@@ -638,7 +653,7 @@ return (p - str);
 } // getnext
 
 // unfinished and untested
-/*
+
 int extract_SC (const buffer_t *src, char *ex, const int exmax, const char *d1, const char d2)
 { // bm buffer_data extract string-char
 
@@ -647,22 +662,22 @@ int d1len = strlen (d1);
 char *p1 = (char *) memmem (src->p, src->len, d1, d1len);
 if (p1 == NULL) return 0;
 
-int o1 = p1 - src.p + d1len;
+int o1 = p1 - src->p + d1len;
 
 char *p2 = (char *) memchr (src->p + o1 + 1, (int) d2, src->len);
 if (p2 == NULL) return 0;
 int o2 = p2 - src->p;
 
-int exlen = o2 - o1 - 1;
+int exlen = o2 - o1;
 if (exlen > exmax) return 0;
 
-memcpy (ex, src.p + o1 + 1, exlen);
+memcpy (ex, src->p + o1, exlen);
 
 ex[exlen] = 0;
 
 return (exlen);
 } // bm extract char char
-*/
+
 
 int extract_CC (const buffer_t src, char *ex, const int exmax, const char d1, const char d2)
 { // bm buffer_data extract char-char
@@ -786,7 +801,8 @@ src[d1] = 0;
 return 1;
 } // parse value
 
-void trim (char *totrim)
+
+int utrim (unsigned char *totrim)
 { // bm void trim
 int len = strlen (totrim);
 
@@ -823,6 +839,7 @@ len -= count;
 ///printf ("trimming %d\n", count);
 }
 
+int endtrim = 0;
 // trim end
 for (int i = len -1; i > 0; --i)
 {
@@ -831,17 +848,99 @@ switch (totrim[i])
 {
 case 10: 
 totrim[i] = 0;
+++endtrim;
 break;
 case 13:
 totrim[i] = 0;
+++endtrim;
 break;
 case 32:
 totrim[i] = 0;
+++endtrim;
 break;
 
 default:
 i = 0;
 } // switch
 } // for
+
+len -= endtrim;
+return len;
+} // trim
+int trim (char *totrim)
+{ // bm void trim
+int len = strlen (totrim);
+
+//trim beginning
+int count = 0;
+for (int i = 0; i !=len; ++i)
+{
+int trigger = 0;
+switch (totrim[i])
+{
+case 10: 
+++count;
+break;
+case 13:
+++count;
+break;
+case 32:
+++count;
+break;
+  
+default:
+goto fin1;
+  
+} // switch
+} // for
+    
+fin1:;
+if (count)
+{
+memmove (totrim, totrim + count, len - count);
+totrim [len - count] = 0;  // works partially
+//memset (totrim + len - count, 0, count);
+len -= count;
+///printf ("trimming %d\n", count);
+}
+
+int endtrim = 0;
+// trim end
+for (int i = len -1; i > 0; --i)
+{
+// printf ("i: %d (%c - <%d>)\n", i, totrim[i], totrim[i]);
+switch (totrim[i])
+{
+case 10: 
+totrim[i] = 0;
+++endtrim;
+break;
+case 13:
+totrim[i] = 0;
+++endtrim;
+break;
+case 32:
+totrim[i] = 0;
+++endtrim;
+break;
+
+default:
+i = 0;
+} // switch
+} // for
+
+len -= endtrim;
+return len;
 } // trim
 
+void save_buffer (const struct buffer_data b, const char *path)
+{ // bm save_buffer
+int localfd = open (path, O_WRONLY | O_TRUNC| O_CREAT, S_IRUSR | S_IWUSR);
+if (localfd < 0)
+	return ;
+
+write (localfd, b.p, b.len);
+
+
+close (localfd);
+}// save_page
