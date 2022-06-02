@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html>
+<head>
+<style>
+body
+{
+text-align:left;
+margin-left:70px;
+background-color:aqua;
+font-size:24px;
+}
+a:link
+{
+color:midnightblue;
+text-decoration:none;
+}
+.button {
+padding-left:20px;
+padding-right:20px;
+font-size:18px;
+}</style>
+</head>
+<body>
+<form name="myf" enctype="multipart/form-data" action="/upload/testdir" method="post">
+<input type="hidden" id="fsize" name="fsize" value="none">     
+
+<input type="file" name="myFile" id="myFile" multiple>
+
+<a href="javascript: procme()">Search</a> 
+      
+<!--  <input type="button" value="upload" onclick="procme ()">-->
+</form>
+
+<script>
+
+
+document.getElementById("demo").innerHTML = "<a href=www.google.com>google</a>";
+function procme () {
+
+let filedata = document.getElementById("myFile");
+
+var i = 0;
+var str = filedata.files.length;
+
+for (i = 0; i < filedata.files.length; ++i)
+    str += ':' + filedata.files[i].size;
+    
+document.getElementById("fsize").value = str;    
+    
+document.forms["myf"].submit();  
+}
+
+</script>
+
+<p id="demo"> </p><br>
+
+
+<!--linklist-->
+
+</body>
+</html>
+
+
+
+

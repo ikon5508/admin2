@@ -125,9 +125,6 @@ transform: translate(-50%,-50%);
 <script>
 var copiedtext;
 var togglestate = 0;
-let rpath = "RESOURCE_PATH";
-
-
 
 var str = new String (window.location);
 
@@ -354,14 +351,7 @@ editor.setReadOnly (false);
     
     document.getElementById('editor').style.fontSize=("18px");
     editor.session.setUseWrapMode(true);
-
-//window.alert (ace.version);
-
-fetch (rpath)
-.then(res => res.text()) 
-.then(res => editor.setValue(res))
-
-.catch(err => window.alert(err));
+    
 </script>
 <a href="javascript: jump ()" class="jump-btn">J</a>
 <a href="javascript: save ()" class="save-btn">S</a>
