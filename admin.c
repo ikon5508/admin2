@@ -377,6 +377,7 @@ printf ("waiting\n");
 
 int connfd = 0;
 connfd = accept(servfd, (struct sockaddr *)&address, (socklen_t*)&addrlen);
+if (connfd == -1) {printf ("connfd -1, errno: %d\n", errno); exit (0); continue;}
 sock_setnonblock (connfd);
 
 char str[INET_ADDRSTRLEN];
@@ -465,20 +466,24 @@ memset (&filedata, 0, sizeof (struct post_file_data));
 int rtn = get_boundary (&filedata, inbuff);
 if (!rtn) {printf ("unable to get boundary\n"); goto make_dead;}
 //printf ("boundary is: [%s]\n", file_data.boundary);
-
 rtn = get_fname (&filedata, inbuff);
-if (!rtn) printf ("didn't locate filename...with head\n");
-
-
-filedata.loopint = 1;
+if (!rtn) 
+{
+filedata.offset = 0;
+printf ("didn't locate filename...with head\n");
+inbuff.len = sock_read (connfd, inbuff.p, inbuff.max);
+if (inbuff.len == -1)  {printf ("timed out recieving\n"); goto make_dead;}
+int res = get_fname (&filedata, inbuff);
+if (res == 0 || res == -1) {printf ("criticsl error\n"); goto make_dead;}
+}
 
 filedata.offset = 0;
 while (filedata.content_prog < request.content_len)
 {
 inbuff.len = sock_read (connfd, inbuff.p, inbuff.max);
 if (inbuff.len == -1)  {printf ("timed out recieving\n"); goto make_dead;}
-if (filedata.stat_fname == 0) 
-if (get_fname (&filedata, inbuff) == -1) killme ("critical error");
+//if (filedata.stat_fname == 0) 
+//if (get_fname (&filedata, inbuff) == -1) killme ("critical error")
 write (filedata.fd, inbuff.p, inbuff.len);
 filedata.content_prog += inbuff.len;  
 filedata.fsize += inbuff.len;
@@ -522,22 +527,19 @@ int end_boundary (struct post_file_data *filedata, const buffer_t inbuff)
 int get_fname (struct post_file_data *filedata, const buffer_t inbuff)
 { // bm get_fname
 if (filedata->stat_fname) return 0; // if file already open return;
+
 int offset = filedata->offset;
-
-if (filedata->loopint == 0) {
 char *bp = memmem (inbuff.p + offset, inbuff.len - offset, filedata->boundary, filedata->boundary_len);
-if (bp != NULL){
+if (bp == NULL) {printf ("no init boundary data not started?\n"); return 0;}
 int tempoffset = bp - inbuff.p;
-filedata->content_prog = inbuff.len - tempoffset + 2;
-//printf ("adjusted content progress for data started within head: %lu\n", filedata->content_prog);
-}else return 0;
-} // if first loop, make sure content prog is set properly
 
-char *p1 = (char *) memmem (inbuff.p + offset, inbuff.len - offset, "filename=", 9);
-if (p1 == NULL)  return -1;
+filedata->content_prog = inbuff.len - tempoffset + 2;
+
+char *p1 = (char *) memmem (inbuff.p, inbuff.len, "filename=", 9);
+if (p1 == NULL)  {printf ("filename\n"); return -1;}
 int start = p1 - inbuff.p + 10;
 char *p2 = (char *) memchr (inbuff.p + start, 10, inbuff.len - start);
-if (p2 == NULL ) return -1;
+if (p2 == NULL ) {printf ("end file name\n"); return -1;}
 
 int end = p2 - inbuff.p;
 int len = end - start - 2;
@@ -546,7 +548,7 @@ int len = end - start - 2;
 //get rid of MIME data included from browser
 end += 15;
 p1 = (char *) memchr (inbuff.p + end, 10, inbuff.len - end);
-if (p1 == NULL) {return 0;}
+if (p1 == NULL) {printf ("cant find delim\n"); return -1;}
 filedata->offset = p1 - inbuff.p + 3;
 
 memcpy (filedata->fname, inbuff.p + start, len);
@@ -578,10 +580,10 @@ char *len_p = (char *) memchr (inbuff.p + start, 10, inbuff.len - start);
 if (len_p == NULL) {return 0;}
 int len = len_p - boundary_p1;
 
-filedata->offset = len_p - inbuff.p;
 memcpy (filedata->boundary, inbuff.p + start + 9, len - 9);
 filedata->boundary_len = trim (filedata->boundary);
 
+filedata->offset = len_p - inbuff.p + filedata->boundary_len;
 return 1;
 } // get boundary
 
@@ -1841,6 +1843,9 @@ progress += wlen;
 } // while progress <
 return 1; 
 } // sock_buffwrite
+
+
+
 
 
 
