@@ -44,10 +44,10 @@ if (strcmp(request.ext, ".hpp") == 0)
 		viewtype = txt;
 
 if (strcmp(request.ext, ".htm") == 0)
-		viewtype = txt;
+		viewtype = none;
 
 if (strcmp(request.ext, ".html") == 0)
-		viewtype = txt;
+		viewtype = none;
 
 if (strcmp(request.ext, ".jpg") == 0)
 		viewtype = img;
@@ -338,72 +338,9 @@ return rtn;
 
 }
 
-int main (int argc, char **argv)
-{ // bm main top
-
-signal(SIGPIPE, SIG_IGN);
-
-for (int i = 1; i < argc; ++i)
-{
-
-if (!strcmp (argv[i], "-p"))
-settings.port = atoi (argv[i+1]);
-
-
-if (!strcmp (argv[i], "-dir"))
-strcpy (settings.base_path, argv[i+1]);
-
-if (!strcmp (argv[i], "-editor"))
-strcpy (settings.editor, argv[i+1]);
-
-} // for settings
-
-struct sockaddr_in address;
-socklen_t addrlen = sizeof(address);
-
-int servfd = prepsocket (settings.port);
-
-printf ("admin load\nPort: %d\nPath: %s\nEditor: %s\n", settings.port, settings.base_path, settings.editor);
-
-char inbuffer [string_sz];
-struct buffer_data inbuff;
-inbuff.p = inbuffer;
-inbuff.max = (string_sz);
-
-// main loop
-while (1)
-{
-printf ("waiting\n");
-
-int connfd = 0;
-connfd = accept(servfd, (struct sockaddr *)&address, (socklen_t*)&addrlen);
-if (connfd == -1) {printf ("connfd -1, errno: %d\n", errno); exit (0); continue;}
-sock_setnonblock (connfd);
-
-char str[INET_ADDRSTRLEN];
-  inet_ntop(address.sin_family, &address.sin_addr, str, INET_ADDRSTRLEN);
-printf("new connection from (%d) %s:%d\n", connfd, str, ntohs(address.sin_port));
-
-
-// keep alive loop
-while (1)
-{
-inbuff.len = sock_read (connfd, inbuff.p, inbuff.max);
-if (inbuff.len == -1)
-{ printf ("client timed out (main-loop)\n");  close (connfd); break; }
-inbuff.p[inbuff.len] = 0;
-
-struct post_file_data filedata;
-struct request_data request;
-int ret = process_request (&request, connfd, inbuff);
-if (ret == 0) {close (connfd); break;}
-
-request.mainbuff = &inbuff;
-
-
-if (request.method == 'G') {
+int process_get (const int connfd, const struct request_data request)
+{ // bm process_get
 printf ("GET: %s\n", request.url);
-
 switch (request.mode) {
 
 case root:
@@ -432,7 +369,7 @@ case edit:
 
 break;
 case action:
-	ret = get_action (request);
+	get_action (request);
 break;
 case favicon:
 	servico (connfd);
@@ -449,16 +386,12 @@ break;
 default:
 printf ("default\n");
 } // END GET switch
+return 1;
+} // end process_get
 
-} else if (request.method == 'P') {
-printf ("POST: %s\n", request.url);
-
-switch (request.mode) {
-case edit:
- 	post_edit (request);
-
-break;
-case upload:
+int post_file (const int connfd, const struct request_data request)
+{ // bm post file
+/*
 //	post_file (request);
 //printf ("[%s]\n", inbuff.p);
 memset (&filedata, 0, sizeof (struct post_file_data));
@@ -504,10 +437,97 @@ close (connfd);
 break;
 default:
 	send_txt (connfd, "Unhandled mode");
+*/
+return 1;
+} // post file
 
+int process_post (const int connfd, const struct request_data request)
+{ // bm process_get
+printf ("POST: %s\n", request.url);
+
+switch (request.mode) {
+case edit:
+ 	post_edit (request);
+
+break;
+case upload:
+	post_file (connfd, request);
+break;
+default:
+	send_txt (connfd, "Unhandled mode");
 } // switch
-//{ softclose (connfd, &inbuff); break;}
+return 1;
+} // process post
 
+int main (int argc, char **argv)
+{ // bm main top
+
+signal(SIGPIPE, SIG_IGN);
+
+for (int i = 1; i < argc; ++i)
+{
+
+if (!strcmp (argv[i], "-p"))
+settings.port = atoi (argv[i+1]);
+
+
+if (!strcmp (argv[i], "-dir"))
+strcpy (settings.base_path, argv[i+1]);
+
+if (!strcmp (argv[i], "-editor"))
+strcpy (settings.editor, argv[i+1]);
+
+} // for settings
+
+struct sockaddr_in address;
+socklen_t addrlen = sizeof(address);
+
+int servfd = prepsocket (settings.port);
+
+printf ("admin load\nPort: %d\nPath: %s\nEditor: %s\n", settings.port, settings.base_path, settings.editor);
+
+char inbuffer [string_sz];
+struct buffer_data inbuff;
+inbuff.p = inbuffer;
+inbuff.max = (string_sz);
+
+// main loop
+while (1)
+{
+printf ("waiting\n");
+
+int connfd = 0;
+connfd = accept(servfd, (struct sockaddr *)&address, (socklen_t*)&addrlen);
+if (connfd == -1) {printf ("connfd -1, errno: %d\n", errno); continue;}
+sock_setnonblock (connfd);
+
+char str[INET_ADDRSTRLEN];
+  inet_ntop(address.sin_family, &address.sin_addr, str, INET_ADDRSTRLEN);
+printf("new connection from (%d) %s:%d\n", connfd, str, ntohs(address.sin_port));
+
+
+// keep alive loop
+while (1)
+{
+inbuff.len = sock_read (connfd, inbuff.p, inbuff.max);
+if (inbuff.len == -1)
+{ printf ("client timed out (main-loop)\n");  close (connfd); break; }
+inbuff.p[inbuff.len] = 0;
+
+struct post_file_data filedata;
+struct request_data request;
+int ret = process_request (&request, connfd, inbuff);
+if (ret == 0) {close (connfd); break;}
+
+request.mainbuff = &inbuff;
+
+
+if (request.method == 'G') {
+process_get (connfd, request);
+
+} else if (request.method == 'P') {
+//{ softclose (connfd, &inbuff); break;}
+process_post (connfd, request);
 } // else if POST
 
 
@@ -518,12 +538,6 @@ make_dead:;
 } // main loop
 } // main
 
-/*
-int end_boundary (struct post_file_data *filedata, const buffer_t inbuff)
-{ // bm end boundary
-    
-} // end boundary
-*/
 int get_fname (struct post_file_data *filedata, const buffer_t inbuff)
 { // bm get_fname
 if (filedata->stat_fname) return 0; // if file already open return;
@@ -765,17 +779,14 @@ return 1;
 
 int serv_dir (const struct request_data request)
 { // bm serv_dir
-const char *template_path = "dir.htm";
-char temp_path [smbuff_sz];
-
-snprintf (temp_path, smbuff_sz, "%s/%s", settings.internal, template_path);
+const char *template_path = "internal/dir.htm";
 
 struct stat finfo;
-if (stat (temp_path, &finfo) != 0)
+if (stat (template_path, &finfo) != 0)
 	{send_txt (request.fd, "cant stat dir template"); return 0;}
 
 buffer_t dir_template = init_buffer (finfo.st_size);
-int dirfd = open (temp_path, O_RDONLY);
+int dirfd = open (template_path, O_RDONLY);
 if (dirfd < 0) {send_txt (request.fd, "cannot open dir template"); return 0;}
 dir_template.len = read (dirfd, dir_template.p, dir_template.max);
 close (dirfd);
@@ -1057,6 +1068,9 @@ int process_request (struct request_data *request, const int fd, const struct bu
 memset (request, 0, sizeof (struct request_data));
 
 request->method = inbuff.p [0];
+
+//printf ("request method is: %c\n", request->method);
+
 request->fd = fd;
 //request->mode = file;
 
@@ -1170,24 +1184,8 @@ if (request->method == 'G') request->content_len = finfo.st_size;
 return 1;
 } // end if 
 
-snprintf (request->full_path, smbuff_sz, "%s%s", settings.internal, request->path);
-//printf ("(alt) running stat on: %s\n", request->full_path);
-if (stat (request->full_path, &finfo) == 0)
-{
-if (request->method == 'G') request->content_len = finfo.st_size;
-	if (S_ISDIR(finfo.st_mode))
-		{request->type = altdir; printf ("is altdir\n");}
-
-	if (S_ISREG(finfo.st_mode)) // is file
-		{request->type = altreg; printf ("is altreg\n");}
-
-return 1;
-}else {
-if (request->method == 'G') request->mode = err; 
-}
 //end if
 
-//send_txt (fd, request->path);
 return 1;
 } // process_request
 
@@ -1199,7 +1197,7 @@ buffer_t filedata;
 {
 struct stat finfo;
 char editor_path [smbuff_sz];
-sprintf (editor_path, "%s/%s", settings.internal, settings.editor);
+sprintf (editor_path, "internal/%s", settings.editor);
 if (stat (editor_path, &finfo)) {send_txt (request.fd, "cant stat Editor"); return 0;}
 editor = init_buffer (finfo.st_size);
 int editor_fd = open (editor_path, O_RDONLY);
@@ -1288,10 +1286,6 @@ int post_edit (const struct request_data request)
 {
 //save_buffer (request.mainbuff, "POST_EDIT.txt");
 
-//int fd1 = open ("POST_EDIT.txt", O_WRONLY | O_TRUNC| O_CREAT, S_IRUSR | S_IWUSR);
-//if (fd1 == -1) killme ("opening file");
-//write (fd1, request.mainbuff->p, request.mainbuff->len);
-//close (fd1);
 
 int progress = 0;
 

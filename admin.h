@@ -67,14 +67,14 @@ int showaction;
 
 // 0 for  non, 1 for show action page 2 for preview file
 char base_path [string_sz];
-char internal [string_sz];
+char ace_builds [string_sz];
 char editor [string_sz];
 
     
-}settings = {9999, 1, ".", "internal", "aceeditor.htm"};
+}settings = {9999, 1, ".", ".", "aceeditor.htm"};
 
 enum emode
-{root, err, file, edit, action, upload, config, favicon, websock, postdump};
+{root, err, file, edit, action, upload, config, favicon, websock, ace-builds};
 
 enum rtype
 {none, reg, dir, altreg, altdir};
