@@ -74,10 +74,7 @@ char editor [string_sz];
 }settings = {9999, 1, ".", ".", "aceeditor.htm"};
 
 enum emode
-{root, err, file, edit, action, upload, config, favicon, websock, ace-builds};
-
-enum rtype
-{none, reg, dir, altreg, altdir};
+{root, err, file, edit, action, upload, config, favicon, websock, ace_builds};
 
 struct request_data
 {
@@ -95,7 +92,6 @@ const struct buffer_data *mainbuff;
 char method;
 int fd;
 enum emode mode;
-enum rtype type;
 };
 
 struct post_file_data {
@@ -146,7 +142,7 @@ int serv_dir (const struct request_data request);
 int serv_file (const struct request_data request);
 int get_file (const struct settings_data settings, const struct request_data request);
 
-int process_request (struct request_data *request, const int fd, const struct buffer_data inbuff);
+int parse_request (struct request_data *request, const int fd, const struct buffer_data inbuff);
 
 int post_edit (const struct request_data request);
 int get_edit (const struct request_data request);

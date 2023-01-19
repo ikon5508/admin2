@@ -7,11 +7,14 @@
 #define edit_mode "/edit"
 #define action_mode "/action"
 #define file_mode "/file"
+#define ace_builds_mode "/ace-builds"
 
 const int upload_mode_len = strlen (upload_mode);
 const int file_mode_len = strlen (file_mode);
 const int action_mode_len = strlen (action_mode);
 const int edit_mode_len = strlen (edit_mode);
+const int ace_builds_mode_len = strlen (ace_builds_mode);
+
 
 const char  BOOKMARK [] = {'/', '/', ' ', 'b', 'm', ' '};
 
@@ -190,15 +193,6 @@ return 1;
 
 } // get_action
 
-int post_action (const struct request_data request, const struct buffer_data inbuff)
-{
-// bm post action
-printf ("%s\n", inbuff.p);
-send_txt (request.fd, "recieved");
-exit (0);
-return 1;
-
-} // post action
 
 int send_mredirect (const int fd, const char *msg, const char *uri)
 {
@@ -341,51 +335,45 @@ return rtn;
 int process_get (const int connfd, const struct request_data request)
 { // bm process_get
 printf ("GET: %s\n", request.url);
-switch (request.mode) {
+if (request.mode == root) {
 
-case root:
-if (request.type == reg || request.type == altreg) {
-	serv_file (request);
-}else if (request.type == dir || request.type == altdir) {
+//case root:
+struct stat finfo;
+if (stat (request.full_path, &finfo) == 0)
+{
+if (S_ISDIR(finfo.st_mode))
 	serv_dir (request);
-}else {
-	send_txt (connfd, "Bad Resource");
-}// if else if type
+if (S_ISREG(finfo.st_mode)) // is file
+	serv_file (request);
+} // if type
 
-break;
-case file:
-if (request.type == reg || request.type == altreg) {
-	serv_file (request);
-}else if (request.type == dir || request.type == altdir) {
-	serv_dir (request);
-}else {
-	send_txt (connfd, "Bad Resource");
-}// if else if type
+}//else if
+/*
+case ace_builds:
 
 break;
 case edit:
-	get_edit (request);
-
+get_edit (request);
 
 break;
 case action:
-	get_action (request);
+get_action (request);
+
 break;
 case favicon:
-	servico (connfd);
-
-//break;
-//case upload:
+servico (connfd);
 
 break;
 case err:
-	send_err (connfd, 410);
-
-
+	//send_err (connfd, 410);
+send_txt (connfd, "Bad{ err} Resource");
 break;
+
 default:
-printf ("default\n");
-} // END GET switch
+send_txt (connfd, "Bad {default}  Resource");
+} // end switch
+return 1;
+*/
 return 1;
 } // end process_get
 
@@ -516,17 +504,21 @@ inbuff.p[inbuff.len] = 0;
 
 struct post_file_data filedata;
 struct request_data request;
-int ret = process_request (&request, connfd, inbuff);
+int ret = parse_request (&request, connfd, inbuff);
 if (ret == 0) {close (connfd); break;}
 
 request.mainbuff = &inbuff;
 
+//send_txt (connfd, "testing worked");
+//break;
 
 if (request.method == 'G') {
 process_get (connfd, request);
 
+if (request.mode == root)
+printf ("process root GET!!!\n");
+
 } else if (request.method == 'P') {
-//{ softclose (connfd, &inbuff); break;}
 process_post (connfd, request);
 } // else if POST
 
@@ -780,7 +772,7 @@ return 1;
 int serv_dir (const struct request_data request)
 { // bm serv_dir
 const char *template_path = "internal/dir.htm";
-
+printf ("servdor!!!!!!!\n");
 struct stat finfo;
 if (stat (template_path, &finfo) != 0)
 	{send_txt (request.fd, "cant stat dir template"); return 0;}
@@ -835,8 +827,8 @@ buffcatf (&dir_list, "<a href=\"/action%s/%s\">%s</a><br>\n", request.path, ep->
 
 if (settings.showaction == 0)	
 (request.url[strlen (request.url) - 1] == '/')?
-buffcatf (&dir_list, "<a href=\"/file%s%s\">%s</a><br>\n", request.path, ep->d_name, ep->d_name):
-buffcatf (&dir_list, "<a href=\"/file%s/%s\">%s</a><br>\n", request.path, ep->d_name, ep->d_name);
+buffcatf (&dir_list, "<a href=\"/%s%s\">%s</a><br>\n", request.path, ep->d_name, ep->d_name):
+buffcatf (&dir_list, "<a href=\"/%s/%s\">%s</a><br>\n", request.path, ep->d_name, ep->d_name);
 
 
 } // while
@@ -861,8 +853,8 @@ sock_buffwrite (request.fd, &dir_template);
 
 
 closedir (dp);
-save_buffer (dir_list, "dir_list.txt");
-save_buffer (dir_template, "dir_template.txt");
+//save_buffer (dir_list, "dir_list.txt");
+//save_buffer (dir_template, "dir_template.txt");
 
 
 free (dir_template.p);
@@ -1063,11 +1055,12 @@ return send_file (request.full_path, request.fd);
 
 
 
-int process_request (struct request_data *request, const int fd, const struct buffer_data inbuff)
+int parse_request (struct request_data *request, const int fd, const struct buffer_data inbuff)
 { // bm process_request
 memset (request, 0, sizeof (struct request_data));
 
 request->method = inbuff.p [0];
+request->mode = root;
 
 //printf ("request method is: %c\n", request->method);
 
@@ -1106,19 +1099,20 @@ request->mode = action;
 request->mode_text = action_mode;
 } // if action_mode
 
-p1 = strstr (request->url, file_mode);
-if (p1 != NULL) {
-path_start = file_mode_len;
-request->mode = file;
-request->mode_text = file_mode;
-} // if file_mode
-
 p1 = strstr (request->url, upload_mode);
 if (p1 != NULL) {
 path_start = upload_mode_len;
 request->mode = upload;
 request->mode_text = upload_mode;
 } // if upload_mode
+
+p1 = strstr (request->url, ace_builds_mode);
+if (p1 != NULL) {
+path_start = 0;
+request->mode = ace_builds;
+request->mode_text = ace_builds_mode;
+} // if upload_mode
+
 
 char encoded_url [smbuff_sz];
 int path_len = path_end - path_start;
@@ -1148,6 +1142,10 @@ request->ext [path_len - rtn] = 0;
 
 } // if ext found
 
+
+//if (request->method == 'G') return 1;
+
+/*
 if (request->method == 'P') {
 int termlen = strlen ("Content-Length: ");
 char *p1 = (char *) strcasestr (inbuff.p, "Content-Length: ");
@@ -1167,25 +1165,8 @@ memcpy (temp, inbuff.p + d1 + termlen, len - termlen - 1);
 request->content_len = atol (temp);
 //printf ("[%lu]\n", request->content_len);
 } //if post  get cont len
-
-//attempt to stat file for GET requests
-snprintf (request->full_path, smbuff_sz, "%s%s", settings.base_path, request->path);
-//printf ("statting regular file :[%s]\n", request->full_path);
-struct stat finfo;
-if (stat (request->full_path, &finfo) == 0)
-{
-if (request->method == 'G') request->content_len = finfo.st_size;
-//printf ("(base) running stat on: %s\n", request->full_path);
-	if (S_ISDIR(finfo.st_mode))
-		{request->type = dir;}
-
-	if (S_ISREG(finfo.st_mode)) // is file
-		{request->type = reg;}
 return 1;
-} // end if 
-
-//end if
-
+*/
 return 1;
 } // process_request
 
