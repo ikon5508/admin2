@@ -111,7 +111,7 @@ buffcatf (&out, "</script>\n");
 
 buffcatf (&out, "%s<br>\n", request.filename);
 
-buffcatf (&out, "<a href=\"/file%s\">View File</a><br>\n", request.path);
+buffcatf (&out, "<a href=\"%s\">View File</a><br>\n", request.path);
 if (showedit)
 	buffcatf (&out, "<a href=\"/edit%s\">Edit File</a><br>\n", request.path);
 
@@ -121,7 +121,7 @@ buffcatf (&out, "<input type=\"button\" class=\"button\" value=\"Move\" onclick=
 buffcatf (&out, "<input type=\"button\" class=\"button\" value=\"Delete\" onclick=\"fdelete()\"><br>\n");
 
 if (viewtype == img)
-	buffcatf (&out, "<img src=\"/file%s\" width=\"600px\" height=\"auto\"></img>", request.path);
+	buffcatf (&out, "<img src=\"%s\" width=\"600px\" height=\"auto\"></img>", request.path);
 
 if (viewtype == txt)
 {
@@ -335,19 +335,35 @@ return rtn;
 int process_get (const int connfd, const struct request_data request)
 { // bm process_get
 printf ("GET: %s\n", request.url);
-if (request.mode == root) {
-
-//case root:
-struct stat finfo;
-if (stat (request.full_path, &finfo) == 0)
+switch (request.mode)
 {
-if (S_ISDIR(finfo.st_mode))
-	serv_dir (request);
-if (S_ISREG(finfo.st_mode)) // is file
-	serv_file (request);
-} // if type
+case root:
+//if (request.mode == root) {
+	if (request.type == reg) serv_file (request);
+	if (request.type == dir) serv_dir (request);
 
-}//else if
+//printf ("root mode\n");
+break;
+case ace_builds:
+	serv_file (request);
+break;
+case action:
+	get_action (request);
+break;
+case favicon:
+	servico (connfd);
+break;
+case edit:
+	get_edit (request);
+break;
+default:
+
+send_txt (connfd, "unexpected error");
+printf ("default\n");
+//}else if (request.mode == ace_builds) {
+
+
+}//else if mode
 /*
 case ace_builds:
 
@@ -369,10 +385,6 @@ case err:
 send_txt (connfd, "Bad{ err} Resource");
 break;
 
-default:
-send_txt (connfd, "Bad {default}  Resource");
-} // end switch
-return 1;
 */
 return 1;
 } // end process_get
@@ -447,8 +459,200 @@ default:
 return 1;
 } // process post
 
+
+struct far_entry {
+int delim_len;
+int rep_len;
+const char *delim;
+const char *rep;
+int delim_pos;
+struct far_entry *next;
+};
+
+struct far_builder {
+char *base;
+int base_len;
+int req_len;
+
+struct far_entry *start;
+};
+
+struct far_builder far_init (buffer_t *in)
+{
+struct far_builder rtn;
+rtn.base = in->p;
+rtn.base_len = in->len;
+rtn.req_len = in->len;
+rtn.start = NULL;
+
+return rtn;
+}
+
+int  far_add (struct far_builder *b, const char *delim, const char *rep, int rep_len)
+{
+if (rep_len == -1) rep_len = strlen (rep);
+//printf ("far add delim: %s, rep: %s\n", delim, rep);
+
+int delim_len = strlen (delim);
+char *p1 = memmem (b->base, b->base_len, delim, delim_len);
+if (p1 == NULL) return 0;
+int delim_pos = p1 - b->base;
+
+struct far_entry *entry = malloc (sizeof (struct far_entry));
+if (entry == NULL) return 0;
+entry->rep = rep;
+entry->rep_len = rep_len;
+entry->delim_pos = delim_pos;
+entry->next = NULL;
+entry->delim = delim;
+entry->delim_len = delim_len;
+b->req_len -= delim_len;
+b->req_len += rep_len;
+
+if (b->start == NULL)
+{
+//printf ("list started\n");
+b->start = entry;
+return 1;
+}
+
+struct far_entry *current = b->start;
+struct far_entry *last = NULL;
+struct far_entry *next = NULL;
+//while (current != NULL)
+for (int i = 0; i < 20; ++i)
+{
+if (current == NULL) break;
+next = current->next;
+//printf ("entry delim %d  current: %d, %s\n", delim_pos, current->delim_pos, current->rep);
+
+
+if (current->delim_pos > delim_pos)
+{
+//printf ("insert here\n");
+last->next = entry;
+entry->next = current;
+return 1;
+}
+
+
+if (next == NULL) 
+{
+//printf ("add to end\n");
+current->next = entry;
+return 1;
+}
+last = current;
+current = current->next;
+}// while
+
+return 0;
+} // far add
+
+buffer_t far_build (struct far_builder *b)
+{
+printf ("far build\n");
+
+buffer_t rtn = init_buffer (b->req_len + 1);
+memset (rtn.p, 0, rtn.max);
+
+
+
+char *base = b->base;
+
+
+
+
+struct far_entry *current = b->start;
+struct far_entry *last = NULL;
+
+int len = b->req_len;
+int offset = 0;
+int boffset = 0;
+//while (current != NULL)    
+for (int i = 0; i < 10; ++i)
+{
+printf ("delim: %s rep: %s dpos: %d\n", current->delim, current->rep, current->delim_pos);
+
+int copylen = current->delim_pos - boffset;
+memcpy (rtn.p + offset, base + boffset, copylen);
+
+offset += copylen;
+printf ("delim lrn: %d \n", current->delim_len);
+boffset += copylen + current->delim_len;
+//len += copylen;
+
+memcpy (rtn.p + offset, current->rep, current->rep_len);
+offset += current->rep_len;
+
+last = current;
+current = current->next;
+free (last);
+if (current == NULL) break;
+} // loop
+
+int copylen = b->base_len - boffset;
+memcpy (rtn.p + offset, base + boffset, copylen);
+//len += copylen;
+rtn.p [len] = 0;
+
+
+
+
+
+
+
+
+
+
+return rtn;
+} // far builder
+
+void far_clear (struct far_builder *b)
+{
+printf ("far clear\n");
+struct far_entry *ent = b->start;
+for (int i = 0; i < 10; ++i)
+//while (ent != NULL)
+{
+if (ent == NULL) break;
+printf ("%d, %s\n", ent->delim_pos, ent->rep);
+free (ent);
+ent = ent->next;
+
+} // while
+
+}// far clear
+
+void test ()
+{
+buffer_t temp = init_buffer (1000);
+temp.len = sprintf (temp.p, "the big fat fox ran up the road!");
+//printf ("%s\n", temp.p);
+
+struct far_builder builder = far_init (&temp);
+printf ("%s\n", builder.base);
+
+far_add (&builder, "big", "small", 5);
+
+far_add (&builder, "fox", "dog", 3);
+
+far_add (&builder, "fat", "skinny", 6);
+
+far_add (&builder, "up", "down", 4);
+
+far_add (&builder, "road", "street", 6);
+
+buffer_t page = far_build (&builder);
+printf ("[%s]\n", page.p);
+
+free (temp.p);
+exit (0);
+}
+
 int main (int argc, char **argv)
 { // bm main top
+test ();
 
 signal(SIGPIPE, SIG_IGN);
 
@@ -479,8 +683,10 @@ struct buffer_data inbuff;
 inbuff.p = inbuffer;
 inbuff.max = (string_sz);
 
+int do_fork = 1;
+int loop_int = 1;
 // main loop
-while (1)
+while (loop_int)
 {
 printf ("waiting\n");
 
@@ -493,6 +699,13 @@ char str[INET_ADDRSTRLEN];
   inet_ntop(address.sin_family, &address.sin_addr, str, INET_ADDRSTRLEN);
 printf("new connection from (%d) %s:%d\n", connfd, str, ntohs(address.sin_port));
 
+if (do_fork)
+{
+int frtn = fork ();
+if (frtn == -1) killme ("fork error");
+else if (frtn == 0) loop_int = 0;
+else {close (connfd); continue;}
+}
 
 // keep alive loop
 while (1)
@@ -514,9 +727,6 @@ request.mainbuff = &inbuff;
 
 if (request.method == 'G') {
 process_get (connfd, request);
-
-if (request.mode == root)
-printf ("process root GET!!!\n");
 
 } else if (request.method == 'P') {
 process_post (connfd, request);
@@ -772,7 +982,7 @@ return 1;
 int serv_dir (const struct request_data request)
 { // bm serv_dir
 const char *template_path = "internal/dir.htm";
-printf ("servdor!!!!!!!\n");
+printf ("servdir!!!!!!!\n");
 struct stat finfo;
 if (stat (template_path, &finfo) != 0)
 	{send_txt (request.fd, "cant stat dir template"); return 0;}
@@ -987,6 +1197,8 @@ return 1;
 
 int serv_file (const struct request_data request)
 {
+printf ("serv_file fd: %d\n", request.fd);
+
 struct string_data outbuff;
 const char *mime_txt;
 
@@ -1037,7 +1249,7 @@ mime_txt = contpdf;
 
 }else {mime_txt = contoctet;}
 
-//printf ("%s\n", mime_txt);
+printf ("mime %s\n", mime_txt);
 
 //struct stat finfo;
 //stat (request.full_path, &finfo);
@@ -1047,9 +1259,11 @@ outbuff.len = sprintf (outbuff.p, "%s%s%s%ld\n\n", hthead, mime_txt, contlen, re
 //printf ("%ld bytes: %s", request.content_len, mime_txt);
 
 sock_writeold (request.fd, outbuff.p, outbuff.len);
+printf ("serv file fullname :%s\n", request.full_path);
 
-return send_file (request.full_path, request.fd);
-//return 1;
+int r = send_file (request.full_path, request.fd);
+printf ("send file: %d\n", r);
+return r;
 
 } // serv_file`
 
@@ -1065,7 +1279,6 @@ request->mode = root;
 //printf ("request method is: %c\n", request->method);
 
 request->fd = fd;
-//request->mode = file;
 
 const int url_len = extract_CC (inbuff, request->url, smbuff_sz, ' ', ' ');
 if (url_len == 0) return 0;
@@ -1083,6 +1296,9 @@ int path_start = 0;
 char *p1 = strchr (request->url, '?');
 if (p1 != NULL) {
 path_end = p1 - request->url;
+memcpy (request->params, request->url + path_end + 1, url_len - path_end - 1);
+request->params [url_len - path_end] = 0;
+//printf ("URL Params: %s\n", request->params);
 } // if uri params
 
 p1 = strstr (request->url, edit_mode);
@@ -1090,6 +1306,7 @@ if (p1 != NULL) {
 path_start = edit_mode_len;
 request->mode = edit;
 request->mode_text = edit_mode;
+printf ("edit mode det!\n");
 } // if edit_mode
 
 p1 = strstr (request->url, action_mode);
@@ -1108,10 +1325,25 @@ request->mode_text = upload_mode;
 
 p1 = strstr (request->url, ace_builds_mode);
 if (p1 != NULL) {
-path_start = 0;
+//path_start = 0;
 request->mode = ace_builds;
 request->mode_text = ace_builds_mode;
-} // if upload_mode
+int pathlen = snprintf (request->full_path, string_sz, "%s%s", settings.ace_builds, request->url);
+
+struct stat finfo;
+if (stat (request->full_path, &finfo) == 0)
+request->content_len = finfo.st_size; else return 0;
+
+int rtn = getlast (request->full_path, (int) '.', pathlen);
+if (rtn != -1) {
+memcpy (request->ext, request->full_path + rtn, pathlen - rtn);
+request->ext [pathlen - rtn] = 0;
+//printf ("Ext: [%s]\n", request->ext);
+
+} // if ext found
+//printf ("ace parse det: %s\n", request->full_path);
+return 1;
+} // if ace_builds
 
 
 char encoded_url [smbuff_sz];
@@ -1119,8 +1351,6 @@ int path_len = path_end - path_start;
 memcpy (encoded_url, request->url + path_start, path_len);
 encoded_url [path_len] = 0;
 //printf ("temp path (%d) [%s]", path_len, temp);
-
-
 
 path_len = URL_decode (encoded_url, request->path);
 //printf ("URL:(%d) [%s]\n", url_len, request->url);
@@ -1142,8 +1372,23 @@ request->ext [path_len - rtn] = 0;
 
 } // if ext found
 
+// now stat file for get requests
+// populate content len for get file
+// if POST request populate content len
 
-//if (request->method == 'G') return 1;
+snprintf (request->full_path, default_sz, "%s%s", settings.base_path, request->path);
+if (request->method == 'G')
+{
+struct stat finfo;
+if (stat (request->full_path, &finfo) == 0)
+{
+if (S_ISDIR(finfo.st_mode))
+	request->type = dir;
+if (S_ISREG(finfo.st_mode)) // is file
+	{request->type = reg; request->content_len = finfo.st_size;}
+} // if type
+return 1;
+}
 
 /*
 if (request->method == 'P') {
