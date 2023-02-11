@@ -4,56 +4,181 @@
 #include <stdlib.h>
 #include <stdarg.h>
 
-
-// must search for multiple instances of delim
-// no worry about going in step, will largely be futile.
-void build_template (buffer_t *buff, const int ents, ...)
+struct far_builder far_init (const buffer_t *in)
 {
-va_list ap;
-va_start (ap, ents);
+struct far_builder rtn;
+rtn.base = in->p;
+rtn.base_len = in->len;
+rtn.req_len = in->len;
+rtn.start = NULL;
 
-int d;
-char c;
-char *s;
-
-struct ent_table {
-char *delim;
-int pos;
-char *rep;
-int replen;
-
-struct ent_table *next;
-}entries[ents];
-
-int req_len = buff->len;
-
-printf ("%s\n", buff->p);
-
-for (int i = 0; i < ents; ++i)
-{
-entries[i].delim = va_arg(ap, char *);
-entries[i].rep = va_arg(ap, char *);
-entries[i].replen = strlen (entries[i].rep);
-int dlen = strlen (entries[i].delim);
-
-char *ret = (char *) memmem (buff->p, buff->len, entries[i].delim, dlen);
-if (ret != NULL) {
-entries[i].pos = ret - buff->p;
-req_len -= dlen;
-req_len += entries[i].replen;
-}else {entries[i].pos = -1;}
-
-
-} // for
-
-
-for (int i = 0; i < ents; ++i)
-{
-printf ("%d: delim: %s, pos: %d, rep: %s, replen: %d\n", i, entries[i].delim, entries[i].pos, entries[i].rep, entries[i].replen);
+return rtn;
 }
 
+int  far_add (struct far_builder *b, const char *delim, const char *rep, int rep_len)
+{
+if (rep_len == -1) rep_len = strlen (rep);
+printf ("far add delim: %s, rep: %s\n", delim, rep);
 
-} // build_template
+int delim_len = strlen (delim);
+char *p1 = memmem (b->base, b->base_len, delim, delim_len);
+if (p1 == NULL) return 0;
+int delim_pos = p1 - b->base;
+
+printf ("delimpos: %d\n", delim_pos);
+
+struct far_entry *entry = malloc (sizeof (struct far_entry));
+if (entry == NULL) return 0;
+entry->rep = rep;
+entry->rep_len = rep_len;
+entry->delim_pos = delim_pos;
+entry->next = NULL;
+entry->delim = delim;
+entry->delim_len = delim_len;
+b->req_len -= delim_len;
+b->req_len += rep_len;
+
+if (b->start == NULL)
+{
+printf ("list started\n");
+b->start = entry;
+return 1;
+}
+
+struct far_entry *current = b->start;
+struct far_entry *last = NULL;
+struct far_entry *next = NULL;
+//while (current != NULL)
+for (int i = 0; i < 20; ++i)
+{
+if (current == NULL) break;
+next = current->next;
+//printf ("entry delim %d  current: %d, %s\n", delim_pos, current->delim_pos, current->rep);
+
+
+if (current->delim_pos > delim_pos)
+{
+printf ("%d insert here %p\n", i, last);
+if (last != NULL)
+{
+last->next = entry;
+entry->next = current;
+return 1;
+}else{
+b->start = entry;
+entry->next = current;
+return 1;
+} // if / else NULL
+} // ins here
+
+
+if (next == NULL) 
+{
+//printf ("add to end\n");
+current->next = entry;
+return 1;
+}
+last = current;
+current = current->next;
+}// while
+
+return 0;
+} // far add
+
+buffer_t far_build (struct far_builder *b)
+{
+printf ("far build\n");
+
+buffer_t rtn = init_buffer (b->req_len + 1);
+memset (rtn.p, 0, rtn.max);
+
+
+
+char *base = b->base;
+
+
+
+
+struct far_entry *current = b->start;
+struct far_entry *last = NULL;
+
+int len = b->req_len;
+int offset = 0;
+int boffset = 0;
+//while (current != NULL)    
+for (int i = 0; i < 10; ++i)
+{
+printf ("delim: %s rep: %s\n", current->delim, current->rep);
+
+int copylen = current->delim_pos - boffset;
+
+printf ("%d, dpos: %d boffset: %d copylen: %d\n", i, current->delim_pos, boffset, copylen);
+memcpy (rtn.p + offset, base + boffset, copylen);
+
+offset += copylen;
+printf ("delim lrn: %d \n", current->delim_len);
+boffset += copylen + current->delim_len;
+//len += copylen;
+
+memcpy (rtn.p + offset, current->rep, current->rep_len);
+offset += current->rep_len;
+
+last = current;
+current = current->next;
+free (last);
+if (current == NULL) break;
+} // loop
+
+int copylen = b->base_len - boffset;
+memcpy (rtn.p + offset, base + boffset, copylen);
+//len += copylen;
+rtn.p [len] = 0;
+rtn.len = len;
+return rtn;
+} // far builder
+
+void far_clear (struct far_builder *b)
+{
+printf ("far clear\n");
+struct far_entry *ent = b->start;
+for (int i = 0; i < 10; ++i)
+//while (ent != NULL)
+{
+if (ent == NULL) break;
+//printf ("%d, %s\n", ent->delim_pos, ent->rep);
+printf ("(%d) %s, %s\n", ent->delim_pos, ent->delim, ent->rep);
+free (ent);
+ent = ent->next;
+
+} // while
+
+}// far clear
+
+void test ()
+{
+buffer_t temp = init_buffer (1000);
+temp.len = sprintf (temp.p, "the big fat fox ran up the road!");
+//printf ("%s\n", temp.p);
+
+struct far_builder builder = far_init (&temp);
+printf ("%s\n", builder.base);
+
+far_add (&builder, "big", "small", 5);
+
+far_add (&builder, "fox", "dog", 3);
+
+far_add (&builder, "fat", "skinny", 6);
+
+far_add (&builder, "up", "down", 4);
+
+far_add (&builder, "road", "street", 6);
+
+buffer_t page = far_build (&builder);
+printf ("[%s]\n", page.p);
+
+free (temp.p);
+exit (0);
+}
 
 
 buffer_t JSON_decode (const buffer_t in)
@@ -482,7 +607,7 @@ const int diff = buff->max - buff->len;
 
 if (diff < req) {
 //printf ("resizing buffer\n");
-buff->p = (char *) realloc (buff->p, buff->max + inc);
+buff->p = (char *) realloc (buff->p, buff->max + inc +1);
 	if (buff->p == NULL) killme ("no realloc");
 buff->max += inc;
 

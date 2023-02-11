@@ -459,201 +459,8 @@ default:
 return 1;
 } // process post
 
-
-struct far_entry {
-int delim_len;
-int rep_len;
-const char *delim;
-const char *rep;
-int delim_pos;
-struct far_entry *next;
-};
-
-struct far_builder {
-char *base;
-int base_len;
-int req_len;
-
-struct far_entry *start;
-};
-
-struct far_builder far_init (buffer_t *in)
-{
-struct far_builder rtn;
-rtn.base = in->p;
-rtn.base_len = in->len;
-rtn.req_len = in->len;
-rtn.start = NULL;
-
-return rtn;
-}
-
-int  far_add (struct far_builder *b, const char *delim, const char *rep, int rep_len)
-{
-if (rep_len == -1) rep_len = strlen (rep);
-//printf ("far add delim: %s, rep: %s\n", delim, rep);
-
-int delim_len = strlen (delim);
-char *p1 = memmem (b->base, b->base_len, delim, delim_len);
-if (p1 == NULL) return 0;
-int delim_pos = p1 - b->base;
-
-struct far_entry *entry = malloc (sizeof (struct far_entry));
-if (entry == NULL) return 0;
-entry->rep = rep;
-entry->rep_len = rep_len;
-entry->delim_pos = delim_pos;
-entry->next = NULL;
-entry->delim = delim;
-entry->delim_len = delim_len;
-b->req_len -= delim_len;
-b->req_len += rep_len;
-
-if (b->start == NULL)
-{
-//printf ("list started\n");
-b->start = entry;
-return 1;
-}
-
-struct far_entry *current = b->start;
-struct far_entry *last = NULL;
-struct far_entry *next = NULL;
-//while (current != NULL)
-for (int i = 0; i < 20; ++i)
-{
-if (current == NULL) break;
-next = current->next;
-//printf ("entry delim %d  current: %d, %s\n", delim_pos, current->delim_pos, current->rep);
-
-
-if (current->delim_pos > delim_pos)
-{
-//printf ("insert here\n");
-last->next = entry;
-entry->next = current;
-return 1;
-}
-
-
-if (next == NULL) 
-{
-//printf ("add to end\n");
-current->next = entry;
-return 1;
-}
-last = current;
-current = current->next;
-}// while
-
-return 0;
-} // far add
-
-buffer_t far_build (struct far_builder *b)
-{
-printf ("far build\n");
-
-buffer_t rtn = init_buffer (b->req_len + 1);
-memset (rtn.p, 0, rtn.max);
-
-
-
-char *base = b->base;
-
-
-
-
-struct far_entry *current = b->start;
-struct far_entry *last = NULL;
-
-int len = b->req_len;
-int offset = 0;
-int boffset = 0;
-//while (current != NULL)    
-for (int i = 0; i < 10; ++i)
-{
-printf ("delim: %s rep: %s dpos: %d\n", current->delim, current->rep, current->delim_pos);
-
-int copylen = current->delim_pos - boffset;
-memcpy (rtn.p + offset, base + boffset, copylen);
-
-offset += copylen;
-printf ("delim lrn: %d \n", current->delim_len);
-boffset += copylen + current->delim_len;
-//len += copylen;
-
-memcpy (rtn.p + offset, current->rep, current->rep_len);
-offset += current->rep_len;
-
-last = current;
-current = current->next;
-free (last);
-if (current == NULL) break;
-} // loop
-
-int copylen = b->base_len - boffset;
-memcpy (rtn.p + offset, base + boffset, copylen);
-//len += copylen;
-rtn.p [len] = 0;
-
-
-
-
-
-
-
-
-
-
-return rtn;
-} // far builder
-
-void far_clear (struct far_builder *b)
-{
-printf ("far clear\n");
-struct far_entry *ent = b->start;
-for (int i = 0; i < 10; ++i)
-//while (ent != NULL)
-{
-if (ent == NULL) break;
-printf ("%d, %s\n", ent->delim_pos, ent->rep);
-free (ent);
-ent = ent->next;
-
-} // while
-
-}// far clear
-
-void test ()
-{
-buffer_t temp = init_buffer (1000);
-temp.len = sprintf (temp.p, "the big fat fox ran up the road!");
-//printf ("%s\n", temp.p);
-
-struct far_builder builder = far_init (&temp);
-printf ("%s\n", builder.base);
-
-far_add (&builder, "big", "small", 5);
-
-far_add (&builder, "fox", "dog", 3);
-
-far_add (&builder, "fat", "skinny", 6);
-
-far_add (&builder, "up", "down", 4);
-
-far_add (&builder, "road", "street", 6);
-
-buffer_t page = far_build (&builder);
-printf ("[%s]\n", page.p);
-
-free (temp.p);
-exit (0);
-}
-
 int main (int argc, char **argv)
 { // bm main top
-test ();
-
 signal(SIGPIPE, SIG_IGN);
 
 for (int i = 1; i < argc; ++i)
@@ -1439,7 +1246,6 @@ if (file_fd < 0) {send_txt (request.fd, "cant open FILE"); return 0;}
 filedata.len = read (file_fd, filedata.p, filedata.max);
 filedata.p[filedata.len] = 0;
 close (file_fd);
-
 } // end file stat
 
 
@@ -1470,7 +1276,9 @@ buffcatf (&bookmarks, "<option value=\"%d\">%s</option>\n", linecount, bm);
 
 } // while
 buffcatf (&bookmarks, "</select>\n");
-save_buffer (bookmarks, "bookmarks.txt");
+
+/*
+//save_buffer (bookmarks, "bookmarks.txt");
 int req_len = editor.len + bookmarks.len;
 
 //int req_len = editor.len;
@@ -1487,20 +1295,42 @@ buffer_t tempb = init_buffer (smbuff_sz);
 strcpy (tempb.p, request.path);
 tempb.len = strlen (request.path);
 FAR (&editor, "RESOURCE_PATH", tempb);
+*/
+printf ("starting far init\n");
 
+struct far_builder builder = far_init (&editor);
+
+int r1 = far_add (&builder, "<!--bookmarks-->", bookmarks.p, bookmarks.len);
+int r2 = far_add (&builder,"RESOURCE_PATH", request.path, -1);
+
+if (r1 == 0  || r2 == 0)
+killme ("far add = 0\n");
+
+printf ("done far add\n");
+
+//far_clear (&builder);
+
+//send_txt (request.fd, "blah");
+//exit (0);
+
+buffer_t page = far_build (&builder);
+
+printf ("done far build\n");
+printf ("page len: %d\n", page.len);
 struct string_data head;
-head.len = sprintf (head.p, "%s%s%s%d\n\n", hthead, conthtml, contlen, editor.len);
+head.len = sprintf (head.p, "%s%s%s%d\n\n", hthead, conthtml, contlen, page.len);
 
 printf ("%d bytes: edit file served\n", editor.len);
 
 sock_writeold (request.fd, head.p, head.len);
-sock_buffwrite (request.fd, &editor);
+sock_buffwrite (request.fd, &page);
 
-save_buffer (editor, "get_edit.txt");
+save_buffer (page, "get_edit.txt");
 
+free (page.p);
 free (filedata.p);
 free (editor.p);
-free (tempb.p);
+//free (tempb.p);
 free (bookmarks.p);
 //send_txt (request.fd, "wow");
 
