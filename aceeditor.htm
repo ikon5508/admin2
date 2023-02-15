@@ -3,6 +3,10 @@
 <head>
   <meta charset="UTF-8">
   <meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1">
+
+<meta name="viewport" 
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=0">
+
   <title>Editor</title>
   <style type="text/css" media="screen">
     body {
@@ -96,7 +100,7 @@ z-index: 3;
 position: fixed;
 display: none;
 width: 85%;
-height: 250px;
+height: 350px;
 right: 75px;
 top: auto;
 bottom: 150px;
@@ -107,10 +111,38 @@ z-index: 2;
 cursor: pointer;
 }
 
+#message {
+position: fixed;
+display: none;
+width: 85%;
+height: 550px;
+right: 75px;
+top: auto;
+bottom: 150px;
+//background-color: rgba(0,0,0,0.5);
+background-color: green;
+
+z-index: 2;
+cursor: pointer;
+}
+
+
 #text {
 position: absolute;
 top: 50%;
 left: 50%;
+font-size: 50px;
+color: white;
+transform: translate(-50%,-50%);
+-ms-transform: translate(-50%,-50%);
+
+
+}
+
+#msgtext {
+position: absolute;
+top: 100%;
+left: 5%;
 font-size: 50px;
 color: white;
 transform: translate(-50%,-50%);
@@ -199,7 +231,7 @@ fetch (window.location, {method: "POST", body: JSON.stringify (a)})
 .then(res => res.text()) 
 .then(res => window.alert(res))
 
-.catch(err => window.alertr(err));
+.catch(err => window.alert(err));
 off ();
 } // function save
 
@@ -266,7 +298,89 @@ editor.setReadOnly (false);
   
 }
 
+function run_make () {
+ 
+ let url = window.location + "?make";
+   
+form = document.createElement('form');
+form.setAttribute('method', 'POST');
+form.setAttribute('enctype', 'multipart/form-data');
+form.setAttribute('action', url);
+
+//myvar = document.createElement('input');
+//myvar.setAttribute('name', 'editor');
+//myvar.setAttribute('type', 'hidden');
+//myvar.setAttribute('value', a);
+
+//form.appendChild(myvar);
+document.body.appendChild(form);
+//form.submit();   
+
+//window.alert (a);
+
+fetch (url, {method: "POST", body: JSON.stringify (form)})
+.then(res => res.text()) 
+.then(res => window.alert(res))
+
+.catch(err => window.alertr(err));
+off ();
+}
+
+function restart () {
+    
+ let url = "/config?rerun";
+   
+form = document.createElement('form');
+form.setAttribute('method', 'POST');
+form.setAttribute('enctype', 'multipart/form-data');
+form.setAttribute('action', url);
+
+//myvar = document.createElement('input');
+//myvar.setAttribute('name', 'editor');
+//myvar.setAttribute('type', 'hidden');
+//myvar.setAttribute('value', a);
+
+//form.appendChild(myvar);
+document.body.appendChild(form);
+//form.submit();   
+
+//window.alert (a);
+
+fetch (url, {method: "POST", body: JSON.stringify (form)})
+.then(res => res.text()) 
+.then(res => window.alert(res))
+
+.catch(err => window.alertr(err));
+off ();
+
+}
+
+function read_leaf () {
+    off ();
+document.getElementById("message").style.display = "block";
+    
+}
+
+function msgoff () {
+ document.getElementById("message").style.display = "none";
+    
+}
+
 </script>
+
+<div id="message">
+<div id="msgtext">
+ make done ***
+ good job.
+ 
+ 
+ 
+  
+</div>    
+ <input type="button" class="button" value="Make" onclick="msgoff()">   
+     
+</div>
+
 <div id="overlay">
 <div id="text">
 <select class="button" onchange="theme(event)">
@@ -306,8 +420,8 @@ editor.setReadOnly (false);
     
 </select>
 
-<input type="button" class="button" value="save" onclick="save()">
-<input type="button" class="button" value="Jump" onclick="test()">
+<input type="button" class="button" value="Make" onclick="run_make()">
+<input type="button" class="button" value="Rerun" onclick="restart()">
 
 <div id="booksdiv">
 <!--bookmarks-->
@@ -318,13 +432,15 @@ editor.setReadOnly (false);
   <option value="800">proc request 800</option>
     
 </select-->
+<input type="checkbox" id="cb" onclick="ro()">
+
 </div>
+<input type="button" class="button" id="read" value="R" onclick="read_leaf()">
 
 
 <input type="button" class="button" value="cut" onclick="cut()">
 <input type="button" class="button" value="copy" onclick="copy()">
 <input type="button" class="button" value="paste" onclick="paste()">
-<input type="checkbox" id="cb" onclick="ro()">
 
 </div>
 </div>
@@ -369,3 +485,18 @@ fetch (rpath)
 
 </body>
 </html>"
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
