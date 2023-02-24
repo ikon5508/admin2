@@ -299,7 +299,7 @@ editor.setReadOnly (false);
 }
 
 function run_make () {
- 
+  
  let url = window.location + "?make";
    
 form = document.createElement('form');
@@ -313,7 +313,7 @@ form.setAttribute('action', url);
 //myvar.setAttribute('value', a);
 
 //form.appendChild(myvar);
-document.body.appendChild(form);
+//document.body.appendChild(form);
 //form.submit();   
 
 //window.alert (a);
@@ -326,9 +326,8 @@ fetch (url, {method: "POST", body: JSON.stringify (form)})
 off ();
 }
 
-function restart () {
-    
- let url = "/config?rerun";
+function rerun () {
+let url = "/config?rerun";
    
 form = document.createElement('form');
 form.setAttribute('method', 'POST');
@@ -341,7 +340,7 @@ form.setAttribute('action', url);
 //myvar.setAttribute('value', a);
 
 //form.appendChild(myvar);
-document.body.appendChild(form);
+//document.body.appendChild(form);
 //form.submit();   
 
 //window.alert (a);
@@ -352,7 +351,6 @@ fetch (url, {method: "POST", body: JSON.stringify (form)})
 
 .catch(err => window.alertr(err));
 off ();
-
 }
 
 function read_leaf () {
@@ -421,7 +419,7 @@ function msgoff () {
 </select>
 
 <input type="button" class="button" value="Make" onclick="run_make()">
-<input type="button" class="button" value="Rerun" onclick="restart()">
+<input type="button" class="button" value="Rerun" onclick="rerun()">
 
 <div id="booksdiv">
 <!--bookmarks-->
@@ -441,6 +439,9 @@ function msgoff () {
 <input type="button" class="button" value="cut" onclick="cut()">
 <input type="button" class="button" value="copy" onclick="copy()">
 <input type="button" class="button" value="paste" onclick="paste()">
+
+<input type="button" class="button" value="Script" onclick="paste()">
+
 
 </div>
 </div>
@@ -485,6 +486,8 @@ fetch (rpath)
 
 </body>
 </html>"
+
+
 
 
 

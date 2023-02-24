@@ -3,18 +3,17 @@
 #include <openssl/sha.h>
 #include <poll.h>
 
-#define upload_mode "/in"
+#define upload_mode "/upload"
 #define edit_mode "/edit"
 #define action_mode "/action"
-#define file_mode "/file"
 #define ace_builds_mode "/ace-builds"
+#define config_mode "/config"
 
 const int upload_mode_len = strlen (upload_mode);
-const int file_mode_len = strlen (file_mode);
 const int action_mode_len = strlen (action_mode);
 const int edit_mode_len = strlen (edit_mode);
 const int ace_builds_mode_len = strlen (ace_builds_mode);
-
+const int config_mode_len = strlen (config_mode);
 
 const char  BOOKMARK [] = {'/', '/', ' ', 'b', 'm', ' '};
 
@@ -186,7 +185,7 @@ struct string_data head;
 
 head.len = sprintf (head.p, "%s%s%s%s%d\n\n", hthead, connka, conthtml, contlen, out.len);
 sock_write (request.fd, head.p, head.len);
-save_buffer (out, "actionpage.htm");
+//save_buffer (out, "actionpage.htm");
 sock_write (request.fd, out.p, out.len);
 return 1;
     
@@ -358,34 +357,16 @@ case edit:
 break;
 default:
 
+//char modetxt [100];
+// err, upload, config, websock
+
+
 send_txt (connfd, "unexpected error");
-printf ("default\n");
+printf ("default %s\n", request.mode_text);
 //}else if (request.mode == ace_builds) {
 
 
-}//else if mode
-/*
-case ace_builds:
-
-break;
-case edit:
-get_edit (request);
-
-break;
-case action:
-get_action (request);
-
-break;
-case favicon:
-servico (connfd);
-
-break;
-case err:
-	//send_err (connfd, 410);
-send_txt (connfd, "Bad{ err} Resource");
-break;
-
-*/
+}//switch mode
 return 1;
 } // end process_get
 
@@ -441,17 +422,109 @@ default:
 return 1;
 } // post file
 
-int process_post (const int connfd, const struct request_data request)
-{ // bm process_get
+int run_make (const struct request_data request)
+{// bm run make
+printf ("run make! %s\n", request.mainbuff->p);
+
+int pipefd[2];
+pipe2(pipefd, O_NONBLOCK);
+// 0 is child
+if (fork() == 0)
+{
+printf ("hello from child\n");
+close(pipefd[0]);    // close reading end in the child
+
+dup2(pipefd[1], 1);  // send stdout to the pipe
+dup2(pipefd[1], 2);  // send stderr to the pipe
+
+char dirpath [smbuff_sz];
+int rtn = getlast (request.full_path, (int) '/', strlen(request.full_path));
+if (rtn == -1) killme ("unexpected occurence");
+printf ("rtn %d\n", rtn);
+memcpy (dirpath, request.full_path, rtn);
+dirpath [rtn] = 0;
+printf ("dirpath [%s]\n", dirpath);
+
+execlp ("make", "make", "-C", dirpath, (char *) NULL);
+//execlp("./hellow", "hellow", "hello world", NULL);
+return 0;
+}else{
+printf ("hello from parent\n");
+    // parent
+char buffer[smbuff_sz];
+char cres [mdbuff_sz];
+buffer_t res;
+res.p = cres;
+res.max = mdbuff_sz;
+res.len = 0;
+
+close(pipefd[1]);  // close the write end of the pipe in the parent
+
+struct pollfd pll;
+pll.fd = pipefd[0];
+pll.events = POLLIN;
+//while (1)
+for (int i = 0; i < 50; ++i)
+{
+printf ("poll wait (run make) ... ");
+int events = poll (&pll, 1, 5000);
+printf ("events %d\n", events);
+if (events <= 0) {printf ("no events\n"); break;}
+int len = read (pipefd[0], buffer, smbuff_sz);
+if (len == 0) break;
+buffer[len] = 0;
+//printf ("(%d) len %d, %.*s\n", i, len, len, buffer);
+
+res.len += snprintf (res.p + res.len, res.max, "%s", buffer);
+
+} // while
+
+res.p [res.len] = 0;
+//buffer [len] = 0;
+//printf ("recieved(%d): %.*s\n", len, len, buffer);
+send_txt (request.fd, res.p);
+return 1;
+} // if else child
+
+} // run make
+
+int post_config (char **argv, const int servfd, const struct request_data request)
+{ // bm post config
+    send_txt (request.fd, "post config");
+
+int frtn = fork ();
+if (frtn == -1) killme ("config fork err");
+else if (frtn == 0)
+{
+
+    int r = execvp (argv [0], argv);
+    printf ("%d post config\n", r);
+
+}
+else killme ("kill parent");  
+  
+  
+  
+    return 1;
+} // post config
+
+int process_post (char **argv, const int servfd, const int connfd, const struct request_data request)
+{ // bm process_post
 printf ("POST: %s\n", request.url);
 
 switch (request.mode) {
 case edit:
- 	post_edit (request);
+ 	if (!strcmp (request.params, "make")) run_make (request);
+	else post_edit (request);
 
 break;
 case upload:
 	post_file (connfd, request);
+	
+break;
+case config:
+    post_config (argv, servfd, request);
+
 break;
 default:
 	send_txt (connfd, "Unhandled mode");
@@ -461,8 +534,8 @@ return 1;
 
 int main (int argc, char **argv)
 { // bm main top
+printf ("test\n");
 signal(SIGPIPE, SIG_IGN);
-
 for (int i = 1; i < argc; ++i)
 {
 
@@ -490,7 +563,7 @@ struct buffer_data inbuff;
 inbuff.p = inbuffer;
 inbuff.max = (string_sz);
 
-int do_fork = 1;
+int do_fork = 0;
 int loop_int = 1;
 // main loop
 while (loop_int)
@@ -499,7 +572,7 @@ printf ("waiting\n");
 
 int connfd = 0;
 connfd = accept(servfd, (struct sockaddr *)&address, (socklen_t*)&addrlen);
-if (connfd == -1) {printf ("connfd -1, errno: %d\n", errno); continue;}
+if (connfd == -1) {printf ("connfd -1, pid: %d\n", getpid()); exit (0); continue;}
 sock_setnonblock (connfd);
 
 char str[INET_ADDRSTRLEN];
@@ -511,7 +584,7 @@ if (do_fork)
 int frtn = fork ();
 if (frtn == -1) killme ("fork error");
 else if (frtn == 0) loop_int = 0;
-else {close (connfd); continue;}
+else {printf ("fid: %d\n", frtn); close (connfd); continue;}
 }
 
 // keep alive loop
@@ -534,9 +607,9 @@ request.mainbuff = &inbuff;
 
 if (request.method == 'G') {
 process_get (connfd, request);
-
+printf ("get from main\n");
 } else if (request.method == 'P') {
-process_post (connfd, request);
+process_post (argv, servfd, connfd, request);
 } // else if POST
 
 
@@ -545,6 +618,9 @@ make_dead:;
  close (connfd); 
 // need to mamage connection, but must be through handling functions?
 } // main loop
+//printf ("exit\n");
+//
+    
 } // main
 
 int get_fname (struct post_file_data *filedata, const buffer_t inbuff)
@@ -789,7 +865,7 @@ return 1;
 int serv_dir (const struct request_data request)
 { // bm serv_dir
 const char *template_path = "internal/dir.htm";
-printf ("servdir!!!!!!!\n");
+//printf ("servdir!!!!!!!\n");
 struct stat finfo;
 if (stat (template_path, &finfo) != 0)
 	{send_txt (request.fd, "cant stat dir template"); return 0;}
@@ -1004,7 +1080,7 @@ return 1;
 
 int serv_file (const struct request_data request)
 {
-printf ("serv_file fd: %d\n", request.fd);
+//printf ("serv_file fd: %d\n", request.fd);
 
 struct string_data outbuff;
 const char *mime_txt;
@@ -1056,7 +1132,7 @@ mime_txt = contpdf;
 
 }else {mime_txt = contoctet;}
 
-printf ("mime %s\n", mime_txt);
+//printf ("mime %s\n", mime_txt);
 
 //struct stat finfo;
 //stat (request.full_path, &finfo);
@@ -1066,10 +1142,10 @@ outbuff.len = sprintf (outbuff.p, "%s%s%s%ld\n\n", hthead, mime_txt, contlen, re
 //printf ("%ld bytes: %s", request.content_len, mime_txt);
 
 sock_writeold (request.fd, outbuff.p, outbuff.len);
-printf ("serv file fullname :%s\n", request.full_path);
+//printf ("serv file fullname :%s\n", request.full_path);
 
 int r = send_file (request.full_path, request.fd);
-printf ("send file: %d\n", r);
+//printf ("send file: %d\n", r);
 return r;
 
 } // serv_file`
@@ -1077,7 +1153,7 @@ return r;
 
 
 int parse_request (struct request_data *request, const int fd, const struct buffer_data inbuff)
-{ // bm process_request
+{ // bm parse_request
 memset (request, 0, sizeof (struct request_data));
 
 request->method = inbuff.p [0];
@@ -1123,6 +1199,15 @@ request->mode = action;
 request->mode_text = action_mode;
 } // if action_mode
 
+p1 = strstr (request->url, config_mode);
+if (p1 != NULL) {
+path_start = config_mode_len;
+request->mode = config;
+request->mode_text = config_mode;
+printf ("config mode det\n");
+} // if config_mode
+
+
 p1 = strstr (request->url, upload_mode);
 if (p1 != NULL) {
 path_start = upload_mode_len;
@@ -1146,8 +1231,15 @@ if (rtn != -1) {
 memcpy (request->ext, request->full_path + rtn, pathlen - rtn);
 request->ext [pathlen - rtn] = 0;
 //printf ("Ext: [%s]\n", request->ext);
-
 } // if ext found
+
+rtn = getlast (request->full_path, (int) '/', pathlen);
+if (rtn != -1) {
+memcpy (request->filename, request->full_path + rtn, pathlen - rtn);
+request->ext [pathlen - rtn] = 0;
+//printf ("filename: [%s]\n", request->filename);
+} // if filename found
+
 //printf ("ace parse det: %s\n", request->full_path);
 return 1;
 } // if ace_builds
@@ -1197,11 +1289,11 @@ if (S_ISREG(finfo.st_mode)) // is file
 return 1;
 }
 
-/*
+
 if (request->method == 'P') {
 int termlen = strlen ("Content-Length: ");
 char *p1 = (char *) strcasestr (inbuff.p, "Content-Length: ");
-if (p1 == NULL) killme ("error locating length");
+if (p1 == NULL) return 0;
 
 int d1 = p1 - inbuff.p;
 
@@ -1215,11 +1307,12 @@ int len = d2 - d1;
 memcpy (temp, inbuff.p + d1 + termlen, len - termlen - 1);
 
 request->content_len = atol (temp);
+return 1;
 //printf ("[%lu]\n", request->content_len);
 } //if post  get cont len
-return 1;
-*/
-return 1;
+
+printf ("parse request end of function (error)\n");
+return 0;
 } // process_request
 
 int get_edit (const struct request_data request)
@@ -1296,7 +1389,6 @@ strcpy (tempb.p, request.path);
 tempb.len = strlen (request.path);
 FAR (&editor, "RESOURCE_PATH", tempb);
 */
-printf ("starting far init\n");
 
 struct far_builder builder = far_init (&editor);
 
@@ -1306,7 +1398,6 @@ int r2 = far_add (&builder,"RESOURCE_PATH", request.path, -1);
 if (r1 == 0  || r2 == 0)
 killme ("far add = 0\n");
 
-printf ("done far add\n");
 
 //far_clear (&builder);
 
@@ -1320,12 +1411,12 @@ printf ("page len: %d\n", page.len);
 struct string_data head;
 head.len = sprintf (head.p, "%s%s%s%d\n\n", hthead, conthtml, contlen, page.len);
 
-printf ("%d bytes: edit file served\n", editor.len);
+printf ("%d bytes: edit file served\n", page.len);
 
 sock_writeold (request.fd, head.p, head.len);
 sock_buffwrite (request.fd, &page);
 
-save_buffer (page, "get_edit.txt");
+//save_buffer (page, "get_edit.txt");
 
 free (page.p);
 free (filedata.p);
@@ -1373,7 +1464,7 @@ progress = encoded.len;
 }
 //printf ("finished cat json\n[%.*s]\n", encoded.len, encoded.p);
 
-save_buffer (encoded, "JSONencoded.txt");
+//save_buffer (encoded, "JSONencoded.txt");
 
 char backup [string_sz];
 strcpy (backup, "old/");
@@ -1893,6 +1984,25 @@ progress += wlen;
 } // while progress <
 return 1; 
 } // sock_buffwrite
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
