@@ -1,7 +1,28 @@
-#include "admin.h"
+#include "shared.h"
+#include <dirent.h>
+#include <stdlib.h>
+#include <stdarg.h>
+#include <stdio.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <netinet/tcp.h>
+#include <string.h>
+#include <time.h>
+#include <netdb.h>
 #include <signal.h>
 #include <openssl/sha.h>
 #include <poll.h>
+#include <signal.h>
+#include <pthread.h>
+#include <stdbool.h>
+#include <openssl/ssl.h>
+#include <openssl/err.h>
+
+#define sendfileunit 10000000
+#define maxbuffer 100000
+#define nameholder 100
+#define string_sz 2048
 
 #define upload_mode "/upload"
 #define edit_mode "/edit"
@@ -15,9 +36,186 @@ const int edit_mode_len = strlen (edit_mode);
 const int ace_builds_mode_len = strlen (ace_builds_mode);
 const int config_mode_len = strlen (config_mode);
 
+#define THREAD_POOL_SIZE 5
+pthread_t thread_pool[THREAD_POOL_SIZE];
+pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
+pthread_cond_t condition_var = PTHREAD_COND_INITIALIZER;
+
+struct sthread_db {
+int id;
+}thread_db [THREAD_POOL_SIZE];
+
+struct trig {
+bool use;
+int connfd;
+}trigger = {false, 0};
+
+struct string_data
+{
+char p[string_sz];
+int procint;
+int len;
+};
+//typedef struct string_data string;
+
+struct io_control {
+SSL *ssl;
+int connfd;
+};
+typedef struct io_control io_t;
+
+struct settings_data {
+int port;
+bool tls;
+int showaction; 
+char base_path [string_sz];
+char ace_builds [string_sz];
+char editor [string_sz];
+}settings = {9999, true, 1, ".", ".", "aceeditor.htm"};
+
+enum emode
+{root, err, file, edit, action, upload, config, favicon, websock, ace_builds};
+
+enum rtype
+{none, reg, dir};
+
+struct request_data
+{
+char url [string_sz];
+char params [string_sz];
+const char *mode_text;
+char path [string_sz];
+char full_path [string_sz];
+char filename [default_sz];
+char ext [default_sz];
+unsigned long content_len;
+
+const char *mime_txt;
+io_t io;
+const struct buffer_data *mainbuff;
+char method;
+int fd;
+enum emode mode;
+enum rtype type;
+};
+
+struct post_file_data {
+char boundary [default_sz];
+int boundary_len;
+unsigned long fsize;
+unsigned long content_prog;
+char fname [default_sz];
+int stat_fname;
+int loopint;
+
+int fd;
+int offset;
+
+}; // post file data
+
+const char *closehead = "HTTP/1.1 200 OK\nContent-Type: text/html\nConnection: close\nContent-Length: ";
+//const char *hello = "HTTP/1.1 200 OK\nContent-Type: text/plain\nContent-Length: 0000012\n\nHello world!";
+const char *hthead = "HTTP/1.1 200 OK\n";
+const char *conticon = "Content-Type: image/x-icon\n";
+const char *contjava = "Content-Type: text/javascript\n";
+const char *conthtml = "Content-Type: text/html; charset=utf-8\n";
+const char *conttxt = "Content-Type: text/plain\n";
+const char *contjpg = "Content-Type: image/jpg\n";
+const char *contpng = "Content-Type: image/png\n";
+const char *contcss = "Content-Type: text/css\n";
+const char *contpdf = "Content-Type: application/pdf\n";
+const char *contmp4 = "Content-Type: video/mp4\n";
+const char *contoctet = "Content-Type: application/octet-stream\n";
+const char *connclose = "Connection: close\n";
+const char *connka = "Connection: timeout=5, max=10\n";
+const char *contlen = "Content-Length: ";
 const char  BOOKMARK [] = {'/', '/', ' ', 'b', 'm', ' '};
 
+SSL_CTX *ctx;
 const int timeout = 3;
+
+int get_fname (struct post_file_data *filedata, const buffer_t inbuff);
+int get_boundary (struct post_file_data *filedata, const buffer_t inbuff); 
+void softclose (const int fd, struct buffer_data *inbuff);
+int getnext (const char *base, const int c, const int offset, const int len);
+int prepsocket (const int PORT);
+int sock_setnonblock (const int fd);
+int send_file2 (const char *path, const int fd);
+void save_buffer (const struct buffer_data b, const char *path);
+void safe_fname (const struct request_data request, const char *fname, char *rtn);
+int servico (const int fd);
+void softclose (const int fd, struct buffer_data *inbuff);
+int send_err (const int fd, const int code);
+int send_txt2 (const int fd, const char *txt);
+int send_ftxt (const int fd, const char *format, ...);
+int serv_dir (const struct request_data request);
+int serv_file (const struct request_data request);
+int get_file (const struct settings_data settings, const struct request_data request);
+int parse_request (struct request_data *request, const int fd, const struct buffer_data inbuff);
+int post_edit (const struct request_data request);
+int get_edit (const struct request_data request);
+int get_config (const struct settings_data settings, const struct request_data request);
+//int post_file (const struct request_data request);
+
+int send_txt (const io_t io, const char *txt);
+
+// old io funcs
+int sock_1writeold (const int connfd, const char *buffer, const int size);
+int sock_buffwrite (const int connfd, struct buffer_data *out);
+int sock_readold (const int connfd, void *buffer, int size);
+int sock_writeold (const int connfd, char *out, const int len);
+
+int sock_write1 (const io_t, const char *, const int);
+int sock_write (const io_t, const char *, const int);
+int sock_read (const io_t, char *, const int);
+int sock_read1 (const io_t, char *, const int);
+int sock_send_file ();
+
+// bm func def
+int tls_read1 (const io_t, char *, const int);
+int tls_read (const io_t, char *, const int);
+int tls_write (const io_t, const char *, const int);
+int tls_write1 (const io_t, const char *, const int);
+int tls_send_file ();
+
+int (*io_read1) (const io_t, char *, const int) = tls_read1;
+int (*io_read) (const io_t, char *, const int) = tls_read;
+int (*io_write) (const io_t, const char *, const int) = tls_write;
+int (*io_write1) (const io_t, const char *, const int) = tls_write1;
+int (*send_file) ();
+
+
+SSL_CTX *create_context()
+{
+    const SSL_METHOD *method;
+    SSL_CTX *ctx;
+
+    method = TLS_server_method();
+
+    ctx = SSL_CTX_new(method);
+    if (!ctx) {
+        perror("Unable to create SSL context");
+        ERR_print_errors_fp(stderr);
+        exit(EXIT_FAILURE);
+    }
+
+    return ctx;
+}
+
+void configure_context(SSL_CTX *ctx)
+{
+    /* Set the key and cert */
+    if (SSL_CTX_use_certificate_file(ctx, "server.crt", SSL_FILETYPE_PEM) <= 0) {
+        ERR_print_errors_fp(stderr);
+        exit(EXIT_FAILURE);
+    }
+
+    if (SSL_CTX_use_PrivateKey_file(ctx, "server.key", SSL_FILETYPE_PEM) <= 0 ) {
+        ERR_print_errors_fp(stderr);
+        exit(EXIT_FAILURE);
+    }
+}
+
 int get_action (const struct request_data request)
 {
 // bm getaction    
@@ -184,9 +382,9 @@ buffcatf (&out, "</body></html>");
 struct string_data head;
 
 head.len = sprintf (head.p, "%s%s%s%s%d\n\n", hthead, connka, conthtml, contlen, out.len);
-sock_write (request.fd, head.p, head.len);
+sock_writeold (request.fd, head.p, head.len);
 //save_buffer (out, "actionpage.htm");
-sock_write (request.fd, out.p, out.len);
+sock_writeold (request.fd, out.p, out.len);
 return 1;
     
 
@@ -194,7 +392,7 @@ return 1;
 
 
 int send_mredirect (const int fd, const char *msg, const char *uri)
-{
+{ // bm send m-redirect
 char outbuff [string_sz];
 char head [string_sz];
 
@@ -204,14 +402,14 @@ int doclen = sprintf (outbuff, "<html><body><script>window.alert(\"%s\"); window
 
 int headlen = sprintf (head, "%s%s%s%s%d\n\n", hthead, conthtml, connclose, contlen, doclen);
 
-sock_write (fd, head, headlen);
-sock_write (fd, outbuff, doclen);
+sock_writeold (fd, head, headlen);
+sock_writeold (fd, outbuff, doclen);
 
 return 1;
 } //send_mredirect
 
 int send_redirect (const int fd, const char *uri)
-{
+{ // bm send redirect
 char outbuff [string_sz];
 char head [string_sz];
 
@@ -221,8 +419,8 @@ int doclen = sprintf (outbuff, "<html><body><script>window.location=\"%s\";</scr
 
 int headlen = sprintf (head, "%s%s%s%s%d\n\n", hthead, conthtml, connclose, contlen, doclen);
 
-sock_write (fd, head, headlen);
-sock_write (fd, outbuff, doclen);
+sock_writeold (fd, head, headlen);
+sock_writeold (fd, outbuff, doclen);
 
 return 1;
 } //send_redirect
@@ -248,7 +446,7 @@ int Base64Encode(const unsigned char* buffer, size_t length, char **b64text) { /
 	return (0); //success
 }
 */
-
+// bm websock
 void getwebsock (const struct request_data request)
 {
 /*
@@ -292,14 +490,14 @@ char *b64rtn;
 char handshake [200];
 len = sprintf (handshake, "%s%s\r\n\r\n", response, b64rtn);
 
-int a = sock_writeold (request.fd, handshake, len);
+int a = sock_1writeold (request.fd, handshake, len);
 
 if (a != len)
 	printf ("sorry\n");
 
 //printf ("[ %s ] done\n", handshake);
 //
-inbuff.len = sock_read (request.fd, inbuff.p, string_sz);
+inbuff.len = sock_readold (request.fd, inbuff.p, string_sz);
 //printf ("%s\n", inbuff.p);
 
 //int localfd = open (request.full_path, O_WRONLY | O_TRUNC| O_CREAT, S_IRUSR | S_IWUSR);
@@ -314,6 +512,7 @@ printf ("len: %d\n", inbuff.len);
 */
 } // websock
 
+/*
 int get_nextsize (struct string_data *fdata)
 {
 int n = getnext (fdata->p, ':', fdata->procint + 1, fdata->len);
@@ -330,6 +529,7 @@ fdata->procint = n;
 return rtn;
 
 }
+*/
 
 int process_get (const int connfd, const struct request_data request)
 { // bm process_get
@@ -361,7 +561,7 @@ default:
 // err, upload, config, websock
 
 
-send_txt (connfd, "unexpected error");
+send_txt2 (connfd, "unexpected error");
 printf ("default %s\n", request.mode_text);
 //}else if (request.mode == ace_builds) {
 
@@ -385,7 +585,7 @@ if (!rtn)
 {
 filedata.offset = 0;
 printf ("didn't locate filename...with head\n");
-inbuff.len = sock_read (connfd, inbuff.p, inbuff.max);
+inbuff.len = sock_readold (connfd, inbuff.p, inbuff.max);
 if (inbuff.len == -1)  {printf ("timed out recieving\n"); goto make_dead;}
 int res = get_fname (&filedata, inbuff);
 if (res == 0 || res == -1) {printf ("criticsl error\n"); goto make_dead;}
@@ -394,7 +594,7 @@ if (res == 0 || res == -1) {printf ("criticsl error\n"); goto make_dead;}
 filedata.offset = 0;
 while (filedata.content_prog < request.content_len)
 {
-inbuff.len = sock_read (connfd, inbuff.p, inbuff.max);
+inbuff.len = sock_readold (connfd, inbuff.p, inbuff.max);
 if (inbuff.len == -1)  {printf ("timed out recieving\n"); goto make_dead;}
 //if (filedata.stat_fname == 0) 
 //if (get_fname (&filedata, inbuff) == -1) killme ("critical error")
@@ -412,12 +612,12 @@ ftruncate (filedata.fd, final);
 char temp [smbuff_sz] = "";
 sprintf (temp, "file saved: %lu\n", final);
 printf ("%s", temp);
-send_txt (connfd, temp);
+send_txt2 (connfd, temp);
 
 close (connfd);
 break;
 default:
-	send_txt (connfd, "Unhandled mode");
+	send_txt2 (connfd, "Unhandled mode");
 */
 return 1;
 } // post file
@@ -482,15 +682,15 @@ res.len += snprintf (res.p + res.len, res.max, "%s", buffer);
 res.p [res.len] = 0;
 //buffer [len] = 0;
 //printf ("recieved(%d): %.*s\n", len, len, buffer);
-send_txt (request.fd, res.p);
+send_txt2 (request.fd, res.p);
 return 1;
 } // if else child
 
 } // run make
 
-int post_config (char **argv, const int servfd, const struct request_data request)
+int post_config (const struct request_data request)
 { // bm post config
-    send_txt (request.fd, "post config");
+ /*   send_txt2 (request.fd, "post config");
 
 int frtn = fork ();
 if (frtn == -1) killme ("config fork err");
@@ -504,11 +704,11 @@ else if (frtn == 0)
 else killme ("kill parent");  
   
   
-  
+ */ 
     return 1;
 } // post config
 
-int process_post (char **argv, const int servfd, const int connfd, const struct request_data request)
+int process_post (const int connfd, const struct request_data request)
 { // bm process_post
 printf ("POST: %s\n", request.url);
 
@@ -523,18 +723,122 @@ case upload:
 	
 break;
 case config:
-    post_config (argv, servfd, request);
+    post_config (request);
 
 break;
 default:
-	send_txt (connfd, "Unhandled mode");
+	send_txt2 (connfd, "Unhandled mode");
 } // switch
 return 1;
 } // process post
 
+int tls_accept (io_t *io)
+{ // bm tls accept
+
+while (1)
+{
+struct pollfd pfd;
+pfd.fd = io->connfd;
+pfd.events = POLLIN | POLLOUT;
+int rtn = poll (&pfd, 1, timeout);
+if (rtn < 1) {printf ("tls accept failure 754\n"); return -1;} 
+int rt = SSL_accept(io->ssl);
+
+if (rt > 0)
+    return 1;
+
+else if (rt <= 0)
+{
+int rt2 = SSL_get_error(io->ssl, rt);
+
+if (rt2 == SSL_ERROR_WANT_WRITE || rt2 == SSL_ERROR_WANT_READ) {
+printf ("want read / write\n");
+continue;
+
+} else if (rt2 == SSL_ERROR_WANT_CONNECT || rt2 == SSL_ERROR_WANT_ACCEPT){
+printf ("want connect / accept\n");
+continue;
+    
+} else {
+printf ("non recoverable error\n");
+   return -1;
+} //if rt2
+
+} // if rt-1
+
+} // while
+
+return -1;
+}
+
+void *thread_function (void *arg)
+{// bm thread func
+struct sthread_db *data = arg;
+printf ("thread init id %d\n", data->id);
+while (1) {
+pthread_mutex_lock(&mutex);
+pthread_cond_wait(&condition_var, &mutex);
+int connfd = trigger.connfd;
+trigger.use = false;
+pthread_mutex_unlock(&mutex);
+
+
+
+char inbuffer [string_sz];
+struct buffer_data inbuff;
+inbuff.p = inbuffer;
+inbuff.max = (string_sz);
+
+
+io_t io;
+io.connfd = connfd;
+if (settings.tls == true)
+{
+io.ssl = SSL_new(ctx);
+SSL_set_fd(io.ssl, connfd);
+int rtn = tls_accept (&io);
+if (rtn == -1) continue;
+}
+
+// bm keep alive loop
+while (1)
+{
+//inbuff.len = sock_readold (connfd, inbuff.p, inbuff.max);
+inbuff.len = io_read1 (io, inbuff.p, inbuff.max);
+if (inbuff.len == -1)
+{ printf ("[%d, (%d)] client timed out\n", data->id, connfd);  close (connfd); break; }
+inbuff.p[inbuff.len] = 0;
+
+//struct post_file_data filedata;
+struct request_data request;
+int ret = parse_request (&request, connfd, inbuff);
+if (ret == 0) {close (connfd); break;}
+
+request.mainbuff = &inbuff;
+request.io = io;
+send_txt (io, "testing worked");
+
+/*
+if (request.method == 'G') {
+process_get (connfd, request);
+//printf ("get from thread %d\n", data->id);
+} else if (request.method == 'P') {
+process_post (connfd, request);
+} // else if POST
+*/
+
+} // keep alive loop
+
+
+//send_txt2 (connfd, "it works, thanks");
+//close (connfd);
+
+} // thread loop
+return NULL;
+} // thread function
+
 int main (int argc, char **argv)
 { // bm main top
-printf ("test\n");
 signal(SIGPIPE, SIG_IGN);
 for (int i = 1; i < argc; ++i)
 {
@@ -549,12 +853,18 @@ strcpy (settings.base_path, argv[i+1]);
 if (!strcmp (argv[i], "-editor"))
 strcpy (settings.editor, argv[i+1]);
 
+if (!strcmp (argv[i], "-notls"))
+settings.tls = false;
+
 } // for settings
 
 struct sockaddr_in address;
 socklen_t addrlen = sizeof(address);
 
 int servfd = prepsocket (settings.port);
+
+if (settings.tls == true)
+{ctx = create_context(); configure_context(ctx);}
 
 printf ("admin load\nPort: %d\nPath: %s\nEditor: %s\n", settings.port, settings.base_path, settings.editor);
 
@@ -565,6 +875,21 @@ inbuff.max = (string_sz);
 
 int do_fork = 0;
 int loop_int = 1;
+
+if (THREAD_POOL_SIZE) {
+for (int i = 0; i < THREAD_POOL_SIZE; i++) {
+thread_db [i].id = i;
+pthread_create(&thread_pool[i], NULL, thread_function, &thread_db [i]);
+}
+} // if thread_pool_size
+
+if (settings.tls == false)
+{
+io_read1 = sock_read1;
+io_read = sock_read;
+io_write1 = sock_write1;
+io_write = sock_write;
+}
 // main loop
 while (loop_int)
 {
@@ -579,6 +904,26 @@ char str[INET_ADDRSTRLEN];
   inet_ntop(address.sin_family, &address.sin_addr, str, INET_ADDRSTRLEN);
 printf("new connection from (%d) %s:%d\n", connfd, str, ntohs(address.sin_port));
 
+
+if (THREAD_POOL_SIZE) {
+pthread_mutex_lock(&mutex);
+
+if (trigger.use == false)
+{
+trigger.use = true;
+trigger.connfd = connfd;
+pthread_cond_signal(&condition_var);
+pthread_mutex_unlock(&mutex);
+//close (connfd); broke it
+continue;
+}else{
+killme ("no idle threads");
+// no available threads
+} //if trigger not freed
+
+pthread_mutex_unlock(&mutex);
+} // if do threads
+
 if (do_fork)
 {
 int frtn = fork ();
@@ -587,10 +932,12 @@ else if (frtn == 0) loop_int = 0;
 else {printf ("fid: %d\n", frtn); close (connfd); continue;}
 }
 
+// if do tls // here
+/*
 // keep alive loop
 while (1)
 {
-inbuff.len = sock_read (connfd, inbuff.p, inbuff.max);
+inbuff.len = sock_readold (connfd, inbuff.p, inbuff.max);
 if (inbuff.len == -1)
 { printf ("client timed out (main-loop)\n");  close (connfd); break; }
 inbuff.p[inbuff.len] = 0;
@@ -602,7 +949,7 @@ if (ret == 0) {close (connfd); break;}
 
 request.mainbuff = &inbuff;
 
-//send_txt (connfd, "testing worked");
+//send_txt2 (connfd, "testing worked");
 //break;
 
 if (request.method == 'G') {
@@ -616,6 +963,7 @@ process_post (argv, servfd, connfd, request);
 } // keep alive loop
 make_dead:;
  close (connfd); 
+*/
 // need to mamage connection, but must be through handling functions?
 } // main loop
 //printf ("exit\n");
@@ -757,7 +1105,7 @@ content_prog = len + boundary_len + 2;
 
 
 while (content_prog < request.content_len) {
-int len  = sock_read (request.fd, inbuff.p + inbuff.len, smbuff_sz);
+int len  = sock_readold (request.fd, inbuff.p + inbuff.len, smbuff_sz);
 if (len == -1) {printf ("read -1\n"); break;}
 if (len == 0) {printf ("read 0\n"); break;}
 content_prog += len;
@@ -846,7 +1194,7 @@ fd = 0;
 
 //save_buffer (inbuff, "saved_inbuff.txt");
 
-send_txt (request.fd, "recieve file here\n");
+send_txt2 (request.fd, "recieve file here\n");
 
 //free (sock_buff.p); 
 free (inbuff.p);
@@ -868,11 +1216,11 @@ const char *template_path = "internal/dir.htm";
 //printf ("servdir!!!!!!!\n");
 struct stat finfo;
 if (stat (template_path, &finfo) != 0)
-	{send_txt (request.fd, "cant stat dir template"); return 0;}
+	{send_txt2 (request.fd, "cant stat dir template"); return 0;}
 
 buffer_t dir_template = init_buffer (finfo.st_size);
 int dirfd = open (template_path, O_RDONLY);
-if (dirfd < 0) {send_txt (request.fd, "cannot open dir template"); return 0;}
+if (dirfd < 0) {send_txt2 (request.fd, "cannot open dir template"); return 0;}
 dir_template.len = read (dirfd, dir_template.p, dir_template.max);
 close (dirfd);
 
@@ -884,7 +1232,7 @@ buffer_t dir_list = init_buffer (lgbuff_sz);
 
 dp = opendir (request.full_path);
 if (dp == NULL)
-	{send_txt (request.fd, "OOPS"); return -1;}
+	{send_txt2 (request.fd, "OOPS"); return -1;}
 
 while ((ep = readdir (dp)))
 {
@@ -940,7 +1288,7 @@ FAR (&dir_template, "DIR_PATH", bdp);
 struct string_data head;
 
 head.len = sprintf (head.p, "%s%s%s%d\n\n", hthead, conthtml, contlen, dir_template.len);
-sock_writeold (request.fd, head.p, head.len);
+sock_1writeold (request.fd, head.p, head.len);
 sock_buffwrite (request.fd, &dir_template);
 
 
@@ -998,7 +1346,7 @@ buffcatf (&out, "</script>\n");
 
 dp = opendir (request.full_path);
 if (dp == NULL)
-	{send_txt (request.fd, "OOPS"); return -1;}
+	{send_txt2 (request.fd, "OOPS"); return -1;}
 
 buffcatf (&out, "%s<br>\n", request.path);
 
@@ -1070,7 +1418,7 @@ printf ("%d: bytes directory info\n", out.len);
 struct string_data head;
 
 head.len = sprintf (head.p, "%s%s%s%d\n\n", hthead, conthtml, contlen, out.len);
-sock_writeold (request.fd, head.p, head.len);
+sock_1writeold (request.fd, head.p, head.len);
 sock_buffwrite (request.fd, &out);
 
 closedir (dp);
@@ -1079,7 +1427,7 @@ return 1;
 } // serv_dir
 
 int serv_file (const struct request_data request)
-{
+{ // bm serv_file
 //printf ("serv_file fd: %d\n", request.fd);
 
 struct string_data outbuff;
@@ -1141,10 +1489,10 @@ outbuff.len = sprintf (outbuff.p, "%s%s%s%ld\n\n", hthead, mime_txt, contlen, re
 
 //printf ("%ld bytes: %s", request.content_len, mime_txt);
 
-sock_writeold (request.fd, outbuff.p, outbuff.len);
+sock_1writeold (request.fd, outbuff.p, outbuff.len);
 //printf ("serv file fullname :%s\n", request.full_path);
 
-int r = send_file (request.full_path, request.fd);
+int r = send_file2 (request.full_path, request.fd);
 //printf ("send file: %d\n", r);
 return r;
 
@@ -1324,18 +1672,18 @@ buffer_t filedata;
 struct stat finfo;
 char editor_path [smbuff_sz];
 sprintf (editor_path, "internal/%s", settings.editor);
-if (stat (editor_path, &finfo)) {send_txt (request.fd, "cant stat Editor"); return 0;}
+if (stat (editor_path, &finfo)) {send_txt2 (request.fd, "cant stat Editor"); return 0;}
 editor = init_buffer (finfo.st_size);
 int editor_fd = open (editor_path, O_RDONLY);
-if (editor_fd < 0) {send_txt (request.fd, "cant open Editor"); return 0;}
+if (editor_fd < 0) {send_txt2 (request.fd, "cant open Editor"); return 0;}
 editor.len = read (editor_fd, editor.p, editor.max);
 editor.p[editor.len] = 0;
 close (editor_fd);
 
-if (stat (request.full_path, &finfo)) {send_txt (request.fd, "cant stat FILE"); return 0;}
+if (stat (request.full_path, &finfo)) {send_txt2 (request.fd, "cant stat FILE"); return 0;}
 filedata = init_buffer (finfo.st_size);
 int file_fd = open (request.full_path, O_RDONLY);
-if (file_fd < 0) {send_txt (request.fd, "cant open FILE"); return 0;}
+if (file_fd < 0) {send_txt2 (request.fd, "cant open FILE"); return 0;}
 filedata.len = read (file_fd, filedata.p, filedata.max);
 filedata.p[filedata.len] = 0;
 close (file_fd);
@@ -1401,7 +1749,7 @@ killme ("far add = 0\n");
 
 //far_clear (&builder);
 
-//send_txt (request.fd, "blah");
+//send_txt2 (request.fd, "blah");
 //exit (0);
 
 buffer_t page = far_build (&builder);
@@ -1413,7 +1761,7 @@ head.len = sprintf (head.p, "%s%s%s%d\n\n", hthead, conthtml, contlen, page.len)
 
 printf ("%d bytes: edit file served\n", page.len);
 
-sock_writeold (request.fd, head.p, head.len);
+sock_1writeold (request.fd, head.p, head.len);
 sock_buffwrite (request.fd, &page);
 
 //save_buffer (page, "get_edit.txt");
@@ -1423,14 +1771,14 @@ free (filedata.p);
 free (editor.p);
 //free (tempb.p);
 free (bookmarks.p);
-//send_txt (request.fd, "wow");
+//send_txt2 (request.fd, "wow");
 
 return 1;
 } // get_edit
 
 
 int post_edit (const struct request_data request)
-{
+{ // bm post edit
 //save_buffer (request.mainbuff, "POST_EDIT.txt");
 
 
@@ -1458,7 +1806,7 @@ encoded.len -= 2;
 
 
 while (progress < request.content_len) {
-encoded.len += sock_read (request.fd, encoded.p + encoded.len, encoded.max);
+encoded.len += sock_readold (request.fd, encoded.p + encoded.len, encoded.max);
 //printf ("multi-reciever\n");
 progress = encoded.len;
 }
@@ -1498,7 +1846,7 @@ killme ("cannot open file to save");
 write (localfd, decoded.p, decoded.len);
 close (localfd);
 
-send_txt (request.fd, "it worked");
+send_txt2 (request.fd, "it worked");
 free (encoded.p);
 free (decoded.p);
 
@@ -1508,50 +1856,21 @@ return 1;
 } //post edit
 
 
-int get_config (const struct settings_data settings, const struct request_data request)
-{
-char outb [maxbuffer];
-struct buffer_data out;
-out.p = outb;
-out.len = 0;
-out.max = maxbuffer;
-
-printf ("get config\n");
-
-buffcatf (&out, "<!DOCTYPE html>\n<html>\n<head>\n");
-
-buffcatf (&out,"<style>\n");
-buffcatf (&out,"body\n{\ntext-align:left;\nmargin-left:70px;\nbackground-color:aqua;\nfont-size:52px;\n}\n");
-buffcatf (&out, "a:link\n{\ncolor:midnightblue;\ntext-decoration:none;\n}\n");
-buffcatf (&out, "</style>\n</head>\n<body>\n");
-
-
-buffcatf (&out, "uri: %s<br>\n path: %s<br>\n fpath: %s<br>\n", request.url, request.path, request.full_path);
-buffcatf (&out, "<img src=\"/file/pic.jpg\">");
-struct string_data head;
-
-
-head.len = sprintf (head.p, "%s%s%s%s%d\n\n", hthead, connka, conthtml, contlen, out.len);
-sock_write (request.fd, head.p, head.len);
-
-sock_write (request.fd, out.p, out.len);
-return 2;
-} // get config
-
 int servico (const int fd)
-{
+{ // bm servico
   struct string_data outbuff;
    
 struct stat finfo;
 stat ("favicon.ico", &finfo);
 
 outbuff.len = sprintf (outbuff.p, "%s%s%s%ld\n\n", hthead,  conticon, contlen, finfo.st_size);
-sock_writeold (fd, outbuff.p, outbuff.len);
+sock_1writeold (fd, outbuff.p, outbuff.len);
 
-send_file ("favicon.ico", fd);
+send_file2 ("favicon.ico", fd);
 return 1;
 } // servico
 
+/*
 void safe_fname (const struct request_data request, const char *fname, char *rtn)
 {
   sprintf (rtn, "%s/%s", request.full_path, fname);
@@ -1568,21 +1887,40 @@ void safe_fname (const struct request_data request, const char *fname, char *rtn
       ++copynum;
  }// while
 }// safe_fname
+*/
 
 int send_err (const int fd, const int code)
-{
+{ // bm send err
 
 if (code == 410)
-	sock_writeold (fd, "HTTP/1.1 410 GONE", 0);
+	sock_1writeold (fd, "HTTP/1.1 410 GONE", 0);
 
 
 if (code == 500)
-	sock_writeold (fd, "HTTP/1.1 500 ERROR", 0);
+	sock_1writeold (fd, "HTTP/1.1 500 ERROR", 0);
 
 return 1;
 } // send_err
 
-int send_txt (const int fd, const char *txt)
+int send_txt (const io_t io, const char *txt)
+{ // bm send_txt
+
+int len = strnlen (txt, maxbuffer);
+
+char outbuffer [maxbuffer];
+struct buffer_data outbuff;
+outbuff.p = outbuffer;
+outbuff.len = 0;
+outbuff.max = maxbuffer;
+
+outbuff.len = snprintf (outbuff.p, maxbuffer, "%s%s%s%s%d\n\n%.*s", hthead, conttxt, connclose, contlen, len, len, txt);
+
+io_write (io, outbuff.p, outbuff.len);
+
+return 1;
+} // send_txt2
+
+int send_txt2 (const int fd, const char *txt)
 {
 
 int len = strlen (txt);
@@ -1598,112 +1936,17 @@ outbuff.len = sprintf (outbuff.p, "%s%s%s%s%d\n\n%.*s", hthead, conttxt, connclo
 sock_buffwrite (fd, &outbuff);
 
 return 1;
-} // send_txt
-
-
-int send_ftxt (const int fd, const char *format, ...)
-{
-va_list ap;
-
-va_start (ap, format);
-
-int formatlen = strlen (format);
-char type;
-int specify_len = 0;
-char entry [maxbuffer] = "";
-
-int len = 0;
-int d;
-char c;
-char *s;
-
-
-for (int fplace = 0; fplace < formatlen; ++fplace)
-{
-if (format [fplace] == '%')
-{
-type = format [fplace + 1];
-// if length is specified as %.*s
-if (type == '.') { specify_len = 1; type = format [fplace + 3];}
-
-if (type == 's')
-{
-if (specify_len)
-{
-d = va_arg(ap, int);
-s = va_arg(ap, char *);
-len += sprintf (entry + len, "%.*s", d, s);
-fplace += 3;
-} // if spec_len	
-
-if (!specify_len)
-{
-s = va_arg(ap, char *);
-len += sprintf (entry + len, "%s", s);
-++fplace;
-
-} // if ! specify_len
-} // if s
-    
-if (type == 'd')
-{
-d = va_arg(ap, int);
-len+= sprintf (entry + len, "%d", d);
-++fplace;
-} // if d
-    
-
-if (type == 'c')
-{
-c = (char) va_arg(ap, int);
-entry [len] = c;
-++len;
-entry [len] = 0;
-++fplace;    
-} // if c
-    
-    
-}else{ // else if    
-entry [len] = format [fplace];
-++len;
-
-} // if    
-} // for
-
-//printf ("%s\n", entry);
-
-va_end(ap);
-
-char outbuffer [maxbuffer];
-struct buffer_data outbuff;
-outbuff.p = outbuffer;
-outbuff.len = 0;
-outbuff.max = maxbuffer;
-
-outbuff.len = sprintf (outbuff.p, "%s%s%s%s%d\n\n%.*s", hthead, conttxt, connclose, contlen, len, len, entry);
-
-sock_buffwrite (fd, &outbuff);
-
-//if (printfon)
-  //  printf ("%.*s", len, entry);
-
-
-//write (fd, entry, len);
-
-return 1;
-} // send_ftxt
-
-
+} // send_txt2
 
 
 int sock_buffwrite (const int connfd, struct buffer_data *out)
-{
+{ // bm sock buffwrite
 int wlen = 0;
 int progress = 0;
 int offset = 0;
 int i;
 
-int written = sock_writeold (connfd, out->p, out->len);
+int written = sock_1writeold (connfd, out->p, out->len);
 if (written == -1)
 	return -1;
 
@@ -1728,7 +1971,7 @@ if (progress + wlen == out->len)
 }// for reset op 
 int totalwrite = wlen + offset;
 
-written = sock_writeold (connfd, out->p, totalwrite);
+written = sock_1writeold (connfd, out->p, totalwrite);
 if (written == -1)
 	return -1;
 
@@ -1760,8 +2003,8 @@ return 1;
 
 
 
-int send_file (const char *path, const int fd)
-{
+int send_file2 (const char *path, const int fd)
+{ // bm sendfile2
 int locfd = open (path, O_RDONLY);
 if (locfd < -1)
     return -1;
@@ -1787,7 +2030,7 @@ while (read_progress < fsize)
 fbuff.len = read (locfd, fbuff.p, fbuff.max);
 read_progress += fbuff.len;
 
-int interim_progress = sock_writeold (fd, fbuff.p, fbuff.len);
+int interim_progress = sock_1writeold (fd, fbuff.p, fbuff.len);
 if (interim_progress == -1)
 	return -1;
 
@@ -1795,7 +2038,7 @@ int cpylen = interim_progress;
 while (cpylen < fbuff.len)
 {
 
-interim_progress = sock_writeold (fd, fbuff.p + cpylen, fbuff.len - cpylen);
+interim_progress = sock_1writeold (fd, fbuff.p + cpylen, fbuff.len - cpylen);
 if (interim_progress == -1)
 	return -1;
 cpylen += interim_progress;
@@ -1808,7 +2051,7 @@ return 1;
 } // sendfile
 
 int sock_setnonblock (const int fd)
-{
+{ // bm set nom block
 if (fcntl(fd, F_SETFL, fcntl(fd, F_GETFL, 0) | O_NONBLOCK) == -1)
 {
 printf ("bad FD, calling fcntl: %d\n", fd);
@@ -1895,8 +2138,8 @@ close(fd);
 } // softclose
 
 
-int sock_writeold (const int connfd, const char *buffer, int size)
-{ // bm sock writeold
+int sock_1writeold (const int connfd, const char *buffer, int size)
+{ // bm sock 1writeold
 
 if (size == 0)
     size = strlen (buffer);
@@ -1910,10 +2153,10 @@ if (prtn < 1) return -1;
 
 return write (connfd, buffer, size);
 
-} // sock_write_old
+} // sock_writeold_old
 
-int sock_read (const int connfd, void *buffer, const int size)
-{
+int sock_readold (const int connfd, void *buffer, const int size)
+{ // bm sock readold
 struct pollfd ev;
 ev.fd = connfd;
 ev.events = POLLIN;
@@ -1924,17 +2167,17 @@ if (r == 0) return -1;
 int len = read (connfd, buffer, size);
 	
 return len;
-} // sock_read
+} // sock_readold
 
 
-int sock_write (const int connfd, char *out, const int len)
-{
+int sock_writeold (const int connfd, char *out, const int len)
+{ // bm sock writeold
 int wlen = 0;
 int progress = 0;
 int offset = 0;
 int i;
 
-int written = sock_writeold (connfd, out, len);
+int written = sock_1writeold (connfd, out, len);
 if (written == -1)
 	return -1;
 
@@ -1959,7 +2202,7 @@ if (progress + wlen == len)
 }// for reset op 
 int totalwrite = wlen + offset;
 
-written = sock_writeold (connfd, out, totalwrite);
+written = sock_1writeold (connfd, out, totalwrite);
 if (written == -1)
 	return -1;
 
@@ -1985,43 +2228,115 @@ progress += wlen;
 return 1; 
 } // sock_buffwrite
 
+int tls_read1 (const io_t io, char *buffer, const int max)
+{ // bm tls_read1
+  struct pollfd ev;
+ev.fd = io.connfd;
+ev.events = POLLIN;
+
+int r = poll (&ev, 1, timeout * 1000);
+if (r == 0) return -1;
+
+int len = SSL_read (io.ssl, buffer, max);
+	
+return len;  
+}
+
+int sock_read1 (const io_t io, char *buffer, const int max)
+{ // bm sock_read1
+  struct pollfd ev;
+ev.fd = io.connfd;
+ev.events = POLLIN;
+
+int r = poll (&ev, 1, timeout * 1000);
+if (r == 0) return -1;
+
+int len = read (io.connfd, buffer, max);
+	
+return len;  
+}
+
+int tls_read (const io_t io, char *buffer, const int max)
+{ // bm tls_read
+  struct pollfd ev;
+ev.fd = io.connfd;
+ev.events = POLLIN;
+
+int r = poll (&ev, 1, timeout * 1000);
+if (r == 0) return -1;
+
+int len = SSL_read (io.ssl, buffer, max);
+	
+return len;  
+}
+
+int sock_read (const io_t io, char *buffer, const int max)
+{ // bm sock_read
+  struct pollfd ev;
+ev.fd = io.connfd;
+ev.events = POLLIN;
+
+int r = poll (&ev, 1, timeout * 1000);
+if (r == 0) return -1;
+
+int len = read (io.connfd, buffer, max);
+	
+return len;  
+}
+
+int tls_write (const io_t io, const char *buffer, const int size)
+{// tls_write
+struct pollfd ev;
+ev.fd = io.connfd;
+ev.events = POLLOUT;
+
+int prtn = poll (&ev, 1, timeout * 1000);
+if (prtn < 1) return -1;
+
+return SSL_write (io.ssl, buffer, size);
+
+}
 
 
+int tls_write1 (const io_t io, const char *buffer, const int size)
+{ // bm tls_write1
+struct pollfd ev;
+ev.fd = io.connfd;
+ev.events = POLLOUT;
+
+int prtn = poll (&ev, 1, timeout * 1000);
+if (prtn < 1) return -1;
+
+return SSL_write (io.ssl, buffer, size);
+
+}
+
+int sock_write (const io_t io, const char *buffer, const int size)
+{// bm sock write
+ struct pollfd ev;
+ev.fd = io.connfd;
+ev.events = POLLOUT;
+
+int prtn = poll (&ev, 1, timeout * 1000);
+if (prtn < 1) return -1;
+
+return write (io.connfd, buffer, size);
+
+}
 
 
+int sock_write1 (const io_t io, const char *buffer, const int size)
+{// bm sock write1
+ struct pollfd ev;
+ev.fd = io.connfd;
+ev.events = POLLOUT;
 
+int prtn = poll (&ev, 1, timeout * 1000);
+if (prtn < 1) return -1;
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+return write (io.connfd, buffer, size);
+return -1;
+}
 
 
 
