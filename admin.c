@@ -1,4 +1,9 @@
-#include "shared.h"
+#define _GNU_SOURCE
+#include <fcntl.h>
+#include <time.h>
+#include <unistd.h>
+#include <sys/types.h>
+#include <sys/stat.h>
 #include <dirent.h>
 #include <stdlib.h>
 #include <stdarg.h>
@@ -19,10 +24,14 @@
 #include <openssl/ssl.h>
 #include <openssl/err.h>
 
-#define sendfileunit 10000000
+#define sendfileunit 10000000 
 #define maxbuffer 100000
 #define nameholder 100
 #define string_sz 2048
+#define default_sz 128
+#define smbuff_sz 2048
+#define mdbuff_sz 10000
+#define lgbuff_sz 100000
 
 #define upload_mode "/upload"
 #define edit_mode "/edit"
@@ -36,10 +45,49 @@ const int edit_mode_len = strlen (edit_mode);
 const int ace_builds_mode_len = strlen (ace_builds_mode);
 const int config_mode_len = strlen (config_mode);
 
-#define THREAD_POOL_SIZE 5
+#define THREAD_POOL_SIZE 0
 pthread_t thread_pool[THREAD_POOL_SIZE];
 pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_cond_t condition_var = PTHREAD_COND_INITIALIZER;
+
+struct far_entry {
+int delim_len;
+int rep_len;
+const char *delim;
+const char *rep;
+int delim_pos;
+struct far_entry *next;
+};
+
+struct far_builder {
+char *base;
+int base_len;
+int req_len;
+
+struct far_entry *start;
+};
+
+struct codeco {
+int pos;
+char dchar;
+};
+
+struct _stopwatch
+{
+struct timespec start, end;
+int sec, msec;
+};
+
+typedef struct _stopwatch stopwatch_t;
+
+struct buffer_data
+{
+char *p;
+int procint;
+int len;
+int max;
+};
+typedef struct buffer_data buffer_t;
 
 struct sthread_db {
 int id;
@@ -134,6 +182,33 @@ const char  BOOKMARK [] = {'/', '/', ' ', 'b', 'm', ' '};
 SSL_CTX *ctx;
 const int timeout = 3;
 
+int extract_SC (const buffer_t *src, char *ex, const int exmax, const char *d1, const char d2);
+int FAR (buffer_t *base, const char *delim, const buffer_t rep);
+int extract_CC (const buffer_t src, char *ex, const int exmax, const char d1, const char d2);
+struct buffer_data init_buffer (const int sz);
+void buffcatf (struct buffer_data *buff, const char *format, ...);
+//void stopwatch_start (stopwatch_t *t);
+//void stopwatch_stop (stopwatch_t *t);
+//void result (int *sec, int *ms);
+int strsearch (const char *main, const char *minor, const int start);
+int midstr(const char *major, char *minor, int start, const int end);
+int getlast (const char *str, const int c, int len);
+int getnext (const char *base, const int c, const int offset, const int len);
+void err_ctl (const int rslt, const char *msg);
+void killme (const char *msg);
+char *parse_line (char *dest, const char *src);
+int split_value (char *, const char, char *);
+int trim (char *totrim);
+buffer_t JSON_decode (const buffer_t in);
+void buffer_sanity (buffer_t *buff, const int req, const int inc);
+buffer_t HTML_encode (const buffer_t in, const int level);
+void save_buffer (const struct buffer_data b, const char *path);
+int URL_decode (const char *in, char *out);
+//typedef struct blueprint blueprint_t;
+struct far_builder far_init (const buffer_t *in);
+int far_add (struct far_builder *b, const char *delim, const char *rep, int rep_len);
+buffer_t far_build (struct far_builder *b);
+void far_clear (struct far_builder *b);
 int get_fname (struct post_file_data *filedata, const buffer_t inbuff);
 int get_boundary (struct post_file_data *filedata, const buffer_t inbuff); 
 void softclose (const int fd, struct buffer_data *inbuff);
@@ -141,9 +216,10 @@ int getnext (const char *base, const int c, const int offset, const int len);
 int prepsocket (const int PORT);
 int sock_setnonblock (const int fd);
 int send_file2 (const char *path, const int fd);
+//int send_file (const io_t io, const char *path);
 void save_buffer (const struct buffer_data b, const char *path);
 void safe_fname (const struct request_data request, const char *fname, char *rtn);
-int servico (const int fd);
+int servico (const io_t);
 void softclose (const int fd, struct buffer_data *inbuff);
 int send_err (const int fd, const int code);
 int send_txt2 (const int fd, const char *txt);
@@ -156,7 +232,6 @@ int post_edit (const struct request_data request);
 int get_edit (const struct request_data request);
 int get_config (const struct settings_data settings, const struct request_data request);
 //int post_file (const struct request_data request);
-
 int send_txt (const io_t io, const char *txt);
 
 // old io funcs
@@ -169,20 +244,20 @@ int sock_write1 (const io_t, const char *, const int);
 int sock_write (const io_t, const char *, const int);
 int sock_read (const io_t, char *, const int);
 int sock_read1 (const io_t, char *, const int);
-int sock_send_file ();
+int sock_send_file (const io_t, const char *);
 
 // bm func def
 int tls_read1 (const io_t, char *, const int);
 int tls_read (const io_t, char *, const int);
 int tls_write (const io_t, const char *, const int);
 int tls_write1 (const io_t, const char *, const int);
-int tls_send_file ();
+int tls_send_file (const io_t, const char *);
 
 int (*io_read1) (const io_t, char *, const int) = tls_read1;
 int (*io_read) (const io_t, char *, const int) = tls_read;
 int (*io_write) (const io_t, const char *, const int) = tls_write;
 int (*io_write1) (const io_t, const char *, const int) = tls_write1;
-int (*send_file) ();
+int (*send_file) (const io_t, const char *) = tls_send_file;
 
 
 SSL_CTX *create_context()
@@ -382,9 +457,13 @@ buffcatf (&out, "</body></html>");
 struct string_data head;
 
 head.len = sprintf (head.p, "%s%s%s%s%d\n\n", hthead, connka, conthtml, contlen, out.len);
-sock_writeold (request.fd, head.p, head.len);
+//sock_writeold (request.fd, head.p, head.len);
 //save_buffer (out, "actionpage.htm");
-sock_writeold (request.fd, out.p, out.len);
+//sock_writeold (request.fd, out.p, out.len);
+
+io_write (request.io, head.p, head.len);
+io_write (request.io, out.p, out.len);
+
 return 1;
     
 
@@ -531,7 +610,7 @@ return rtn;
 }
 */
 
-int process_get (const int connfd, const struct request_data request)
+int process_get (const io_t io, const struct request_data request)
 { // bm process_get
 printf ("GET: %s\n", request.url);
 switch (request.mode)
@@ -550,7 +629,7 @@ case action:
 	get_action (request);
 break;
 case favicon:
-	servico (connfd);
+	servico (io);
 break;
 case edit:
 	get_edit (request);
@@ -561,7 +640,7 @@ default:
 // err, upload, config, websock
 
 
-send_txt2 (connfd, "unexpected error");
+send_txt (io, "unexpected error");
 printf ("default %s\n", request.mode_text);
 //}else if (request.mode == ace_builds) {
 
@@ -708,7 +787,7 @@ else killme ("kill parent");
     return 1;
 } // post config
 
-int process_post (const int connfd, const struct request_data request)
+int process_post (const io_t io, const struct request_data request)
 { // bm process_post
 printf ("POST: %s\n", request.url);
 
@@ -719,7 +798,7 @@ case edit:
 
 break;
 case upload:
-	post_file (connfd, request);
+	post_file (io.connfd, request);
 	
 break;
 case config:
@@ -727,7 +806,7 @@ case config:
 
 break;
 default:
-	send_txt2 (connfd, "Unhandled mode");
+	send_txt (io, "Unhandled mode");
 } // switch
 return 1;
 } // process post
@@ -752,11 +831,11 @@ else if (rt <= 0)
 int rt2 = SSL_get_error(io->ssl, rt);
 
 if (rt2 == SSL_ERROR_WANT_WRITE || rt2 == SSL_ERROR_WANT_READ) {
-printf ("want read / write\n");
+//printf ("want read / write\n");
 continue;
 
 } else if (rt2 == SSL_ERROR_WANT_CONNECT || rt2 == SSL_ERROR_WANT_ACCEPT){
-printf ("want connect / accept\n");
+//printf ("want connect / accept\n");
 continue;
     
 } else {
@@ -771,19 +850,8 @@ printf ("non recoverable error\n");
 return -1;
 }
 
-void *thread_function (void *arg)
-{// bm thread func
-struct sthread_db *data = arg;
-printf ("thread init id %d\n", data->id);
-while (1) {
-pthread_mutex_lock(&mutex);
-pthread_cond_wait(&condition_var, &mutex);
-int connfd = trigger.connfd;
-trigger.use = false;
-pthread_mutex_unlock(&mutex);
-
-
-
+int process_connection (const int thread_id, const int connfd)
+{
 char inbuffer [string_sz];
 struct buffer_data inbuff;
 inbuff.p = inbuffer;
@@ -797,7 +865,8 @@ if (settings.tls == true)
 io.ssl = SSL_new(ctx);
 SSL_set_fd(io.ssl, connfd);
 int rtn = tls_accept (&io);
-if (rtn == -1) continue;
+if (rtn == -1) {close (connfd); return -1;}
+printf ("thread func ssl %p\n", io.ssl);
 }
 
 // bm keep alive loop
@@ -806,7 +875,15 @@ while (1)
 //inbuff.len = sock_readold (connfd, inbuff.p, inbuff.max);
 inbuff.len = io_read1 (io, inbuff.p, inbuff.max);
 if (inbuff.len == -1)
-{ printf ("[%d, (%d)] client timed out\n", data->id, connfd);  close (connfd); break; }
+{ 
+printf ("[%d, (%d)] client timed out\n", thread_id, connfd); 
+if (settings.tls == true) 
+{
+//SSL_shutdown(io.ssl);
+//SSL_free(io.ssl);
+}
+close (connfd); break;
+}
 inbuff.p[inbuff.len] = 0;
 
 //struct post_file_data filedata;
@@ -816,22 +893,42 @@ if (ret == 0) {close (connfd); break;}
 
 request.mainbuff = &inbuff;
 request.io = io;
-send_txt (io, "testing worked");
+//send_txt (io, "testing worked");
 
-/*
+
 if (request.method == 'G') {
-process_get (connfd, request);
+process_get (io, request);
 //printf ("get from thread %d\n", data->id);
 } else if (request.method == 'P') {
-process_post (connfd, request);
+process_post (io, request);
 } // else if POST
-*/
+
 
 } // keep alive loop
 
-
+if (settings.tls == true) 
+{
+//SSL_shutdown(io.ssl);
+//SSL_free(io.ssl);
+}
 //send_txt2 (connfd, "it works, thanks");
-//close (connfd);
+close (io.connfd);
+return 1;
+} // process connection
+
+void *thread_function (void *arg)
+{// bm thread func
+struct sthread_db *data = arg;
+printf ("thread init id %d\n", data->id);
+while (1) {
+pthread_mutex_lock(&mutex);
+pthread_cond_wait(&condition_var, &mutex);
+const int connfd = trigger.connfd;
+trigger.use = false;
+pthread_mutex_unlock(&mutex);
+
+process_connection (data->id, connfd);
+
 
 } // thread loop
 return NULL;
@@ -873,9 +970,6 @@ struct buffer_data inbuff;
 inbuff.p = inbuffer;
 inbuff.max = (string_sz);
 
-int do_fork = 0;
-int loop_int = 1;
-
 if (THREAD_POOL_SIZE) {
 for (int i = 0; i < THREAD_POOL_SIZE; i++) {
 thread_db [i].id = i;
@@ -889,9 +983,10 @@ io_read1 = sock_read1;
 io_read = sock_read;
 io_write1 = sock_write1;
 io_write = sock_write;
+send_file = sock_send_file;
 }
 // main loop
-while (loop_int)
+while (1)
 {
 printf ("waiting\n");
 
@@ -923,52 +1018,10 @@ killme ("no idle threads");
 
 pthread_mutex_unlock(&mutex);
 } // if do threads
-
-if (do_fork)
-{
-int frtn = fork ();
-if (frtn == -1) killme ("fork error");
-else if (frtn == 0) loop_int = 0;
-else {printf ("fid: %d\n", frtn); close (connfd); continue;}
-}
-
-// if do tls // here
-/*
-// keep alive loop
-while (1)
-{
-inbuff.len = sock_readold (connfd, inbuff.p, inbuff.max);
-if (inbuff.len == -1)
-{ printf ("client timed out (main-loop)\n");  close (connfd); break; }
-inbuff.p[inbuff.len] = 0;
-
-struct post_file_data filedata;
-struct request_data request;
-int ret = parse_request (&request, connfd, inbuff);
-if (ret == 0) {close (connfd); break;}
-
-request.mainbuff = &inbuff;
-
-//send_txt2 (connfd, "testing worked");
-//break;
-
-if (request.method == 'G') {
-process_get (connfd, request);
-printf ("get from main\n");
-} else if (request.method == 'P') {
-process_post (argv, servfd, connfd, request);
-} // else if POST
-
-
-} // keep alive loop
-make_dead:;
- close (connfd); 
-*/
-// need to mamage connection, but must be through handling functions?
+process_connection (-1, connfd);
 } // main loop
 //printf ("exit\n");
 //
-    
 } // main
 
 int get_fname (struct post_file_data *filedata, const buffer_t inbuff)
@@ -1288,11 +1341,12 @@ FAR (&dir_template, "DIR_PATH", bdp);
 struct string_data head;
 
 head.len = sprintf (head.p, "%s%s%s%d\n\n", hthead, conthtml, contlen, dir_template.len);
-sock_1writeold (request.fd, head.p, head.len);
-sock_buffwrite (request.fd, &dir_template);
 
+//sock_1writeold (request.fd, head.p, head.len);
+//sock_buffwrite (request.fd, &dir_template);
 
-
+io_write (request.io, head.p, head.len);
+io_write (request.io, dir_template.p, dir_template.len);
 closedir (dp);
 //save_buffer (dir_list, "dir_list.txt");
 //save_buffer (dir_template, "dir_template.txt");
@@ -1489,11 +1543,12 @@ outbuff.len = sprintf (outbuff.p, "%s%s%s%ld\n\n", hthead, mime_txt, contlen, re
 
 //printf ("%ld bytes: %s", request.content_len, mime_txt);
 
-sock_1writeold (request.fd, outbuff.p, outbuff.len);
+io_write (request.io, outbuff.p, outbuff.len);
 //printf ("serv file fullname :%s\n", request.full_path);
 
-int r = send_file2 (request.full_path, request.fd);
-//printf ("send file: %d\n", r);
+int r = send_file (request.io, request.full_path);
+//int r = send_file2 (request.full_path, request.fd);
+printf ("send file: %d\n", r);
 return r;
 
 } // serv_file`
@@ -1718,26 +1773,6 @@ buffcatf (&bookmarks, "<option value=\"%d\">%s</option>\n", linecount, bm);
 } // while
 buffcatf (&bookmarks, "</select>\n");
 
-/*
-//save_buffer (bookmarks, "bookmarks.txt");
-int req_len = editor.len + bookmarks.len;
-
-//int req_len = editor.len;
-editor.p = realloc (editor.p, req_len);
-if (editor.p == NULL) killme ("no realloc");
-editor.max = req_len;
-FAR (&editor, "<!--bookmarks-->", bookmarks);
-
-//buffer_t encoded = init_buffer (0);
-//buffer_t encoded = HTML_encode (filedata, 1);
-//save_buffer (encoded, "encodedhtm.txt");
-
-buffer_t tempb = init_buffer (smbuff_sz);
-strcpy (tempb.p, request.path);
-tempb.len = strlen (request.path);
-FAR (&editor, "RESOURCE_PATH", tempb);
-*/
-
 struct far_builder builder = far_init (&editor);
 
 int r1 = far_add (&builder, "<!--bookmarks-->", bookmarks.p, bookmarks.len);
@@ -1746,23 +1781,17 @@ int r2 = far_add (&builder,"RESOURCE_PATH", request.path, -1);
 if (r1 == 0  || r2 == 0)
 killme ("far add = 0\n");
 
-
-//far_clear (&builder);
-
-//send_txt2 (request.fd, "blah");
-//exit (0);
-
 buffer_t page = far_build (&builder);
 
-printf ("done far build\n");
-printf ("page len: %d\n", page.len);
 struct string_data head;
 head.len = sprintf (head.p, "%s%s%s%d\n\n", hthead, conthtml, contlen, page.len);
 
 printf ("%d bytes: edit file served\n", page.len);
 
-sock_1writeold (request.fd, head.p, head.len);
-sock_buffwrite (request.fd, &page);
+io_write (request.io, head.p, head.len);
+io_write (request.io, page.p, page.len);
+//sock_1writeold (request.fd, head.p, head.len);
+//sock_buffwrite (request.fd, &page);
 
 //save_buffer (page, "get_edit.txt");
 
@@ -1856,7 +1885,7 @@ return 1;
 } //post edit
 
 
-int servico (const int fd)
+int servico (const io_t io)
 { // bm servico
   struct string_data outbuff;
    
@@ -1864,9 +1893,10 @@ struct stat finfo;
 stat ("favicon.ico", &finfo);
 
 outbuff.len = sprintf (outbuff.p, "%s%s%s%ld\n\n", hthead,  conticon, contlen, finfo.st_size);
-sock_1writeold (fd, outbuff.p, outbuff.len);
+io_write (io, outbuff.p, outbuff.len);
 
-send_file2 ("favicon.ico", fd);
+send_file (io, "favicon.ico");
+//send_file2 ("favicon.ico", fd);
 return 1;
 } // servico
 
@@ -1999,9 +2029,138 @@ return 1;
 
 
 
+int sock_send_file (const io_t io, const char *path)
+{ // bm sock sendfile
+
+//works!
+//return send_file2 (path, io.connfd);
+struct pollfd pfd;
+pfd.fd = io.connfd;
+pfd.events = POLLOUT;
+
+int locfd = open (path, O_RDONLY);
+if (locfd < -1)
+    return -1;
+//const int connfd = io.connfd;
+
+struct stat finfo;
+fstat (locfd, &finfo);
+
+size_t read_progress = 0;
+
+size_t write_progress = 0;
+
+size_t fsize = finfo.st_size;
+//printf (200, "file size: %d\n", fsize);
+
+char *c_fbuffer = (char *) malloc (sendfileunit);
+struct buffer_data fbuff;
+fbuff.p = c_fbuffer;
+fbuff.max = sendfileunit;
+
+
+while (read_progress < fsize)
+{  
+fbuff.len = read (locfd, fbuff.p, fbuff.max);
+read_progress += fbuff.len;
+
+
+int rtn = poll (&pfd, 1, timeout * 1000);
+if (rtn < 0) return -1;
+
+int interim_progress = write (io.connfd, fbuff.p, fbuff.len);
+if (interim_progress == -1)
+	return -1;
+
+int cpylen = interim_progress;
+while (cpylen < fbuff.len)
+{
+
+int rtn = poll (&pfd, 1, timeout * 1000);
+if (rtn < 0) return -1;
+interim_progress = write (io.connfd, fbuff.p + cpylen, fbuff.len - cpylen);
+if (interim_progress == -1)
+	return -1;
+cpylen += interim_progress;
+} // while
+
+} // while loop
+close (locfd);
+free (c_fbuffer);
+return 1;
+
+} // sock_send_file
+
+
+int tls_send_file (const io_t io, const char *path)
+{ // bm tls sendfile
+
+//return send_file2 (path, io.connfd);
+struct pollfd pfd;
+pfd.fd = io.connfd;
+pfd.events = POLLOUT;
+
+int locfd = open (path, O_RDONLY);
+if (locfd < -1)
+    return -1;
+//const int connfd = io.connfd;
+
+struct stat finfo;
+fstat (locfd, &finfo);
+
+size_t read_progress = 0;
+
+size_t write_progress = 0;
+
+size_t fsize = finfo.st_size;
+printf ("file size: %zu\n", fsize);
+
+char *c_fbuffer = (char *) malloc (sendfileunit);
+struct buffer_data fbuff;
+fbuff.p = c_fbuffer;
+fbuff.max = sendfileunit;
+
+
+while (read_progress < fsize)
+{  
+fbuff.len = read (locfd, fbuff.p, fbuff.max);
+read_progress += fbuff.len;
+
+int interim_progress = -1;
+while (interim_progress == -1)
+{
+int rtn = poll (&pfd, 1, timeout * 1000);
+if (rtn < 0) return -1;
+interim_progress = SSL_write (io.ssl, fbuff.p, fbuff.len);
+if (interim_progress == -1)
+{
+int rt2 = SSL_get_error(io.ssl, interim_progress);
+
+if (rt2 == SSL_ERROR_WANT_WRITE || rt2 == SSL_ERROR_WANT_READ) {
+printf ("want r/w: ");
+continue;
+
+} else if (rt2 == SSL_ERROR_WANT_CONNECT || rt2 == SSL_ERROR_WANT_ACCEPT){
+printf ("want connect / accept\n");
+continue;
+    
+} else {
+printf ("non recoverable error\n");
+ return -1;
+} //if ssl get err
+
+}else printf ("%d written\n", interim_progress); // if -1
+} // while
 
 
 
+
+} // while read
+
+close (locfd);
+free (c_fbuffer);
+return 1;
+} // tls_send_file
 
 int send_file2 (const char *path, const int fd)
 { // bm sendfile2
@@ -2048,7 +2207,7 @@ cpylen += interim_progress;
 close (locfd);
 free (c_fbuffer);
 return 1;
-} // sendfile
+} // sendfile2
 
 int sock_setnonblock (const int fd)
 { // bm set nom block
@@ -2286,6 +2445,7 @@ return len;
 
 int tls_write (const io_t io, const char *buffer, const int size)
 {// tls_write
+printf ("tls writing\n");
 struct pollfd ev;
 ev.fd = io.connfd;
 ev.events = POLLOUT;
@@ -2293,26 +2453,26 @@ ev.events = POLLOUT;
 int prtn = poll (&ev, 1, timeout * 1000);
 if (prtn < 1) return -1;
 
-return SSL_write (io.ssl, buffer, size);
+int rtn = SSL_write (io.ssl, buffer, size);
+int accrue = rtn;
+while (accrue < size)
+{
 
-}
-
-
-int tls_write1 (const io_t io, const char *buffer, const int size)
-{ // bm tls_write1
-struct pollfd ev;
-ev.fd = io.connfd;
-ev.events = POLLOUT;
-
-int prtn = poll (&ev, 1, timeout * 1000);
+prtn = poll (&ev, 1, timeout * 1000);
 if (prtn < 1) return -1;
-
-return SSL_write (io.ssl, buffer, size);
-
+   
+rtn = SSL_write (io.ssl, buffer + accrue, size - accrue);
+if (rtn <= 0) return 1;
+accrue += rtn;
 }
+return accrue;
+
+} // tls write
+
 
 int sock_write (const io_t io, const char *buffer, const int size)
 {// bm sock write
+//printf ("sock writing\n");
  struct pollfd ev;
 ev.fd = io.connfd;
 ev.events = POLLOUT;
@@ -2320,9 +2480,20 @@ ev.events = POLLOUT;
 int prtn = poll (&ev, 1, timeout * 1000);
 if (prtn < 1) return -1;
 
-return write (io.connfd, buffer, size);
+int rtn = write (io.connfd, buffer, size);
+int accrue = rtn;
+while (accrue < size)
+{
 
+prtn = poll (&ev, 1, timeout * 1000);
+if (prtn < 1) return -1;
+   
+rtn = write (io.connfd, buffer + accrue, size - accrue);
+if (rtn <= 0) return 1;
+accrue += rtn;
 }
+return accrue;
+} // sock write
 
 
 int sock_write1 (const io_t io, const char *buffer, const int size)
@@ -2337,6 +2508,1023 @@ if (prtn < 1) return -1;
 return write (io.connfd, buffer, size);
 return -1;
 }
+
+int tls_write1 (const io_t io, const char *buffer, const int size)
+{ // bm tls_write1
+struct pollfd ev;
+ev.fd = io.connfd;
+ev.events = POLLOUT;
+
+int prtn = poll (&ev, 1, timeout * 1000);
+if (prtn < 1) return -1;
+
+return SSL_write (io.ssl, buffer, size);
+
+}
+
+struct far_builder far_init (const buffer_t *in)
+{ // bm far init
+struct far_builder rtn;
+rtn.base = in->p;
+rtn.base_len = in->len;
+rtn.req_len = in->len;
+rtn.start = NULL;
+
+return rtn;
+}
+
+int far_add (struct far_builder *b, const char *delim, const char *rep, int rep_len)
+{ // bm far add
+if (rep_len == -1) rep_len = strlen (rep);
+//printf ("far add delim: %s, rep: %s\n", delim, rep);
+
+int delim_len = strlen (delim);
+char *p1 = memmem (b->base, b->base_len, delim, delim_len);
+if (p1 == NULL) return 0;
+int delim_pos = p1 - b->base;
+
+//printf ("delimpos: %d\n", delim_pos);
+
+struct far_entry *entry = malloc (sizeof (struct far_entry));
+if (entry == NULL) return 0;
+entry->rep = rep;
+entry->rep_len = rep_len;
+entry->delim_pos = delim_pos;
+entry->next = NULL;
+entry->delim = delim;
+entry->delim_len = delim_len;
+b->req_len -= delim_len;
+b->req_len += rep_len;
+
+if (b->start == NULL)
+{
+//printf ("list started\n");
+b->start = entry;
+return 1;
+}
+
+struct far_entry *current = b->start;
+struct far_entry *last = NULL;
+struct far_entry *next = NULL;
+while (current != NULL)
+//for (int i = 0; i < 20; ++i)
+{
+if (current == NULL) break;
+next = current->next;
+//printf ("entry delim %d  current: %d, %s\n", delim_pos, current->delim_pos, current->rep);
+
+
+if (current->delim_pos > delim_pos)
+{
+//printf ("%d insert here %p\n", i, last);
+if (last != NULL)
+{
+last->next = entry;
+entry->next = current;
+return 1;
+}else{
+b->start = entry;
+entry->next = current;
+return 1;
+} // if / else NULL
+} // ins here
+
+
+if (next == NULL) 
+{
+//printf ("add to end\n");
+current->next = entry;
+return 1;
+}
+last = current;
+current = current->next;
+}// while
+
+return 0;
+} // far add
+
+buffer_t far_build (struct far_builder *b)
+{
+//printf ("far build\n");
+
+buffer_t rtn = init_buffer (b->req_len + 1);
+memset (rtn.p, 0, rtn.max);
+
+
+
+char *base = b->base;
+
+
+
+
+struct far_entry *current = b->start;
+struct far_entry *last = NULL;
+
+int len = b->req_len;
+int offset = 0;
+int boffset = 0;
+while (current != NULL)    
+//for (int i = 0; i < 10; ++i)
+{
+//printf ("delim: %s rep: %s\n", current->delim, current->rep);
+
+int copylen = current->delim_pos - boffset;
+
+//printf ("%d, dpos: %d boffset: %d copylen: %d\n", i, current->delim_pos, boffset, copylen);
+memcpy (rtn.p + offset, base + boffset, copylen);
+
+offset += copylen;
+printf ("delim lrn: %d \n", current->delim_len);
+boffset += copylen + current->delim_len;
+//len += copylen;
+
+memcpy (rtn.p + offset, current->rep, current->rep_len);
+offset += current->rep_len;
+
+last = current;
+current = current->next;
+free (last);
+if (current == NULL) break;
+} // loop
+
+int copylen = b->base_len - boffset;
+memcpy (rtn.p + offset, base + boffset, copylen);
+//len += copylen;
+rtn.p [len] = 0;
+rtn.len = len;
+return rtn;
+} // far builder
+
+void far_clear (struct far_builder *b)
+{
+//printf ("far clear\n");
+struct far_entry *ent = b->start;
+//for (int i = 0; i < 10; ++i)
+while (ent != NULL)
+{
+if (ent == NULL) break;
+//printf ("%d, %s\n", ent->delim_pos, ent->rep);
+//printf ("(%d) %s, %s\n", ent->delim_pos, ent->delim, ent->rep);
+free (ent);
+ent = ent->next;
+
+} // while
+
+}// far clear
+
+void test ()
+{
+buffer_t temp = init_buffer (1000);
+temp.len = sprintf (temp.p, "the big fat fox ran up the road!");
+//printf ("%s\n", temp.p);
+
+struct far_builder builder = far_init (&temp);
+printf ("%s\n", builder.base);
+
+far_add (&builder, "big", "small", 5);
+
+far_add (&builder, "fox", "dog", 3);
+
+far_add (&builder, "fat", "skinny", 6);
+
+far_add (&builder, "up", "down", 4);
+
+far_add (&builder, "road", "street", 6);
+
+buffer_t page = far_build (&builder);
+printf ("[%s]\n", page.p);
+
+free (temp.p);
+exit (0);
+}
+
+
+buffer_t JSON_decode (const buffer_t in)
+{
+int tail = 0;
+int req_len = in.len - 2;
+
+const int increment = 200;
+int inst_max = increment;
+int inst_count = 0;
+
+struct codeco *inst = (struct codeco *)  malloc (inst_max * sizeof (struct codeco));
+if (inst == NULL) killme ("no malloc");
+
+//for (int i = 0; i < 100; ++i)
+while (1)
+{
+char *p1 = (char *) memchr (in.p + tail,  92, in.len - tail);
+if (p1 == NULL) break;
+
+if (inst_count == inst_max)
+{
+inst_max += increment;
+printf ("resizing instruction array\n");
+inst = realloc (inst, sizeof (struct codeco) * inst_max);
+if (inst == NULL) killme ("no realloc");
+} //if
+
+int d1 = p1 - in.p + 1;
+char dchar = in.p[d1];
+
+
+//printf ("%d pos:%d dchar: %c\n", inst_count ,d1 , dchar);
+
+switch (dchar) {
+case 'n':
+inst[inst_count].dchar = dchar;
+inst[inst_count].pos = d1;
+req_len -= 1;
+
+break;
+case '\"':
+inst[inst_count].dchar = dchar;
+inst[inst_count].pos = d1;
+req_len -= 1;
+
+break;
+case 92:
+inst[inst_count].dchar = dchar;
+inst[inst_count].pos = d1;
+req_len -= 1;
+
+break;
+case 't':
+inst[inst_count].dchar = dchar;
+inst[inst_count].pos = d1;
+req_len -= 1;
+
+break;
+case '\'':
+inst[inst_count].dchar = dchar;
+inst[inst_count].pos = d1;
+req_len -= 1;
+
+break;
+default:
+printf ("unhandled escape delimeter char: [%d]%c\n", d1, dchar);
+char temp [smbuff_sz];
+memset (temp, 0, default_sz);
+memcpy (temp, in.p + d1 - 80,160);
+printf ("samp [%s]\n", temp);
+exit (0);
+} // end switch
+
+tail = d1 + 1;
+++inst_count;
+} //loop
+
+//printf ("in.len: %d| req_len: %d\n", in.len, req_len);
+
+buffer_t out = init_buffer (req_len);
+memset (out.p, 0, req_len);
+int i = 0;
+tail = 0;
+for (i = 0; i < inst_count; ++i)
+{
+
+int len = inst[i].pos - tail - 2;
+memcpy (out.p + out.len, in.p + tail + 1, len);
+out.len += len;
+tail = inst[i].pos;
+
+switch (inst[i].dchar) {
+
+case 'n':
+	out.p[out.len] = 10;
+
+break;
+case 92:
+	out.p[out.len] = 92;
+
+break;
+case  '\"':
+	out.p[out.len] = '\"';
+
+break;
+case '\'':
+	out.p[out.len] = '\'';
+
+break;
+case  't':
+	out.p[out.len] = 9;
+
+break;
+default: 
+killme ("unhandled instruction");
+
+}// switch
+
+++out.len;
+} // loop
+
+///printf ("req_len: %d, ou.len: %d\n", req_len, out.len);
+
+int len = req_len - out.len;
+if (len > 0) {
+memcpy (out.p + out.len, in.p + tail +1, len);
+out.len += len;
+printf ("added!!\n");
+}else{
+
+switch (inst[inst_count -1].dchar) {
+
+case 'n':
+	out.p[out.len] = 10;
+
+break;
+case 92:
+	out.p[out.len] = 92;
+
+break;
+case  '\"':
+	out.p[out.len] = '\"';
+
+break;
+case '\'':
+	out.p[out.len] = '\'';
+
+break;
+case  't':
+	out.p[out.len] = 9;
+}
+printf ("len is 0last dchar %d[%c]\n", inst[inst_count -1].dchar, inst[inst_count -1].dchar);
+
+++out.len;
+}
+
+
+
+
+//printf ("len: %d ...last char: %d[%c]\n", out.len, out.p[out.len], out.p[out.len]);
+
+/*
+char temp [default_sz];
+memset (temp, 0, default_sz);
+memcpy (temp, in.p + tail +1, len);
+printf ("adding [%s]\n", temp);
+exit (0);
+*/
+
+free (inst);
+return out;
+} // JSON decode
+
+
+buffer_t HTML_encode (const buffer_t in, const int level)
+{
+//const buffer_t in = *((buffer_t *) buff);
+
+int d1 = 0;
+int d2 = 0;
+char lastc = 0;
+
+char searchstr[10];
+if (level == 1)
+{
+lastc = 0;
+strcpy (searchstr, "\'\"&<>");
+
+}else if  (level == 2) {
+lastc = '\n';
+strcpy (searchstr, "\"\'&<>\n");
+} // if
+
+
+//printf ("%s\n\n", in.p);
+const int increment = 500;
+int inst_max = increment;
+int inst_count = 0;
+
+struct codeco *inst = (struct codeco *)  malloc (inst_max * sizeof (struct codeco));
+if (inst == NULL) killme ("no malloc");
+int req_len = in.len;
+printf ("in.len: %d\n", in.len);
+while (1)
+//for (int q = 0; q < 10; ++q)
+{
+
+char *p1 = strpbrk (in.p + d1, searchstr);
+//char *p1 = memchr (in.p + d1, (int) '<', in.len);
+if (p1 == NULL) break ;
+
+if (inst_count == inst_max)
+{
+inst_max += increment;
+printf ("resizing instruction array\n");
+inst = realloc (inst, sizeof (struct codeco) * inst_max);
+if (inst == NULL) killme ("no realloc");
+} //if
+
+d2 = p1 - in.p;
+char dchar = in.p[d2];
+switch (dchar) {
+// 34 = " 39 = '
+case 34:
+inst [inst_count].pos = d2;
+inst [inst_count].dchar = in.p[d2];
+++inst_count;
+req_len += 5;
+
+break;
+case 39:
+inst [inst_count].pos = d2;
+inst [inst_count].dchar = in.p[d2];
+++inst_count;
+req_len += 5;
+
+break;
+case '<':
+inst [inst_count].pos = d2;
+inst [inst_count].dchar = in.p[d2];
+++inst_count;
+req_len += 4;
+break;
+
+case '>':
+inst [inst_count].pos = d2;
+inst [inst_count].dchar = in.p[d2];
+++inst_count;
+req_len += 4;
+
+break;
+case '&':
+inst [inst_count].pos = d2;
+inst [inst_count].dchar = in.p[d2];
+++inst_count;
+req_len += 5;
+
+break;
+default :
+
+if (lastc == dchar) {
+inst [inst_count].pos = d2;
+inst [inst_count].dchar = in.p[d2];
+++inst_count;
+req_len += 4;
+}
+}// switch
+
+d1 = d2 + 1;
+} // first loop
+
+//printf ("inst_cout: %d, in_len: %d, req_len: %d\n", inst_count, in.len, req_len);
+buffer_t out;
+out.p = malloc (req_len);
+if (out.p == NULL) killme ("malloc");
+out.len = 0;
+out.max = req_len;
+/*
+if (out->max == 0)
+{
+//printf ("buffer not allocated\n");
+out->p = malloc (req_len);
+if (out->p == NULL) killme ("no malloc");
+}else if (out->max < req_len) {
+
+//printf ("buffer too small\n");
+out->p = realloc (out->p, req_len);
+if (out->p == NULL) killme ("no realloc");
+}
+*/
+int pos = -1;
+for (int i = 0; i < inst_count; ++i)
+{
+//printf ("#d %d: pos %d: dchar: %c\n", i, inst[i].pos, inst[i].dchar);
+
+
+int len = inst[i].pos - pos - 1;
+//memcpy (temp, in.p + pos + 1, len);
+memcpy (out.p + out.len, in.p + pos + 1, len);
+out.len += len;
+
+char dchar = inst[i].dchar;
+switch (dchar) {
+case 34: // = "
+//&#34;
+out.p[out.len] = '&';
+out.p[out.len + 1] = '#';
+out.p[out.len + 2] = '3';
+out.p[out.len + 3] = '4';
+out.p[out.len + 4] = ';';
+out.len += 5;
+
+break;
+case 39: // = '
+//&#39;
+out.p[out.len] = '&';
+out.p[out.len + 1] = '#';
+out.p[out.len + 2] = '3';
+out.p[out.len + 3] = '9';
+out.p[out.len + 4] = ';';
+out.len += 5;
+
+break;
+case '&':
+out.p[out.len] = '&';
+out.p[out.len + 1] = 'a';
+out.p[out.len + 2] = 'm';
+out.p[out.len + 3] = 'p';
+out.p[out.len + 4] = ';';
+out.len += 5;
+
+break;
+case '<':
+out.p[out.len] = '&';
+out.p[out.len + 1] = 'l';
+out.p[out.len + 2] = 't';
+out.p[out.len + 3] = ';';
+out.len += 4;
+break;
+
+case '>':
+out.p[out.len] = '&';
+out.p[out.len + 1] = 'g';
+out.p[out.len + 2] = 't';
+out.p[out.len + 3] = ';';
+out.len += 4;
+break;
+default:
+
+
+if (lastc == dchar) {
+out.p[out.len] = '<';
+out.p[out.len + 1] = 'b';
+out.p[out.len + 2] = 'r';
+out.p[out.len + 3] = '>';
+out.len += 4;
+
+}
+
+} // switch
+pos = inst[i].pos;
+
+} //for
+
+
+int len = in.len - pos - 1;
+if (len > 0) {
+memcpy (out.p + out.len, in.p + pos + 1, len);
+out.len += len;
+}
+//printf ("out-> [%.*s]\n", out->len, out->p);
+free (inst);
+//free (in.p);
+
+//const buffer_t rtn = *((buffer_t *) out);
+return out;
+
+} // end HTML encode
+
+
+
+int URL_decode (const char *in, char *out)
+{ // bm URL_decode
+int outlen = 0;
+int tail = 0;
+while (1)
+{
+char *p1 = strchr (in + tail, (int) '%');
+if (p1 == NULL) break;
+int offset = p1 - in;
+
+//copy everything up to offset
+int len = offset - tail;
+memcpy (out + outlen, in + tail, len);
+outlen += len;
+//printf ("progress: %.*s\n", outlen, out); 
+
+char code [4]; 
+memcpy (code, in + offset + 1, 2);
+code [2] = 0;
+ 
+if (!strcmp (code, "20"))
+	out [outlen] = ' ';
+	++outlen;
+
+tail = offset + 3;
+} //loop
+
+int in_len = strlen (in);
+int remainder = in_len - tail;
+memcpy (out + outlen, in + tail, remainder);
+outlen += remainder;
+
+out [outlen] = 0;
+
+
+
+return outlen;
+} // URL decode
+
+void buffer_sanity (buffer_t *buff, const int req, const int inc)
+{
+const int diff = buff->max - buff->len;
+//printf ("bufflen: %d, buffmax: %d\n", buff->len, buff->max);
+
+if (diff < req) {
+//printf ("resizing buffer\n");
+buff->p = (char *) realloc (buff->p, buff->max + inc +1);
+	if (buff->p == NULL) killme ("no realloc");
+buff->max += inc;
+
+} // if resize needed
+
+} // buffer_sanity
+
+int FAR (buffer_t *base, const char *delim, const buffer_t rep)
+{
+char *p1 = (char *) memmem (base->p, base->len, delim, strlen (delim));
+if (p1 == NULL) return 0;
+
+int d1 = p1 - base->p;
+int d2 = d1 + strlen (delim);
+
+int templen = base->len - d2;
+int bparse = base->len - templen;
+
+char *temp = (char *) malloc (templen);
+if (temp == NULL) killme ("no malloc");
+memcpy (temp, base->p + bparse, templen);
+
+/*printf ("base: %d:  [%.*s]\n", base->len, base->len,  base->p);
+printf ("rep %s\n", rep.p);
+printf ("temp %d [%.*s]\n", templen, templen, temp);
+*/
+// do overflow protection
+int req_len = d1 + templen + rep.len;
+if (req_len > base->max) {
+//printf ("req len: %d, base->max: %d-resizing buffer\n", req_len, base->max);
+int diff = req_len - base->max;
+int needed = base->max + req_len;
+
+base->p = (char *) realloc (base->p, needed);
+if (base->p == NULL) killme ("no realloc");
+base->max = needed;
+} // if base resize needed
+
+memcpy (base->p + d1, rep.p, rep.len);
+base->len = rep.len + d1;
+
+
+//printf ("base: %d:  [%.*s]\n", base->len, base->len,  base->p);
+memcpy (base->p + base->len, temp, templen);
+base->len += templen;
+free (temp);
+//printf ("base: %d:  [%.*s]\n", base->len, base->len,  base->p);
+return 1;
+} // FAR
+
+// no overflow protection
+void buffcatf (struct buffer_data *buff, const char *format, ...)
+{
+va_list ap;
+va_start (ap, format);
+
+int formatlen = strlen (format);
+//char type;
+//int specify_len = 0;
+//char entry [lgbuff_sz] = "";
+
+int len = 0;
+int d;
+char c;
+char *s;
+
+char *delim;
+int offset = 0;
+int pos = 0;
+
+while (1)
+{
+delim = strchr (format + offset, '%');
+if (delim == NULL) break;
+
+offset = delim - format + 1;
+char dchar = format [offset];
+int len = offset - pos - 1;
+// do realloc check here
+//add formatted string here before dchar
+buffer_sanity (buff, len, len);
+memcpy (buff->p + buff->len, format + pos, len);
+buff->len += len;
+
+switch (dchar)
+//if (dchar == 's')
+{
+case 's':
+s = va_arg(ap, char *);
+int slen = strlen (s);
+buffer_sanity (buff, slen, slen);
+buff->len += sprintf (buff->p + buff->len, "%s", s);
+break;
+
+case 'd':
+d = va_arg(ap, int);
+char temp [100];
+int tlen = sprintf (temp, "%d", d);
+buffer_sanity (buff, tlen, tlen);
+
+buff->len += sprintf (buff->p + buff->len, "%d", d);
+
+//strcat (buff->p, temp);
+//buff->len += tlen;
+
+//buff->len +=break;
+} // switch
+pos = offset + 1;
+
+} // while
+
+len = formatlen - pos;
+buffer_sanity (buff, len, len);
+memcpy (buff->p + buff->len, format + pos, len);
+buff->len += len;
+buff->p[buff->len] = 0;
+
+
+/*
+
+if (type == 'c')
+{
+c = (char) va_arg(ap, int);
+entry [len] = c;
+++len;
+entry [len] = 0;
+++fplace;    
+} // if c
+*/
+
+} // buffcatf
+
+
+int strsearch (const char *main, const char *minor, const int start)
+{
+char *p = strstr (main + start, minor);
+if (p == NULL) return -1;
+
+return (p - main + strlen (minor));
+
+} // end search
+
+int midstr(const char *major, char *minor, int start, const int end)
+{
+int len = end - start;
+
+memcpy (minor, major + start, len);
+minor [len] = 0;
+return len;
+
+} // end midstr
+
+int getlast (const char *str, const int next, int end)
+{
+char *p = (char *) memrchr (str, next, end);
+if (p == NULL) return -1;
+
+return (p - str);
+}
+
+int getnext (const char *str, const int next, const int start, int end)
+{
+
+char *p = (char *) memchr (str + start, next, end - start);
+if (p == NULL) return -1;
+
+return (p - str);
+} // getnext
+
+// unfinished and untested
+
+int extract_SC (const buffer_t *src, char *ex, const int exmax, const char *d1, const char d2)
+{ // bm buffer_data extract string-char
+
+int d1len = strlen (d1);
+
+char *p1 = (char *) memmem (src->p, src->len, d1, d1len);
+if (p1 == NULL) return 0;
+
+int o1 = p1 - src->p + d1len;
+
+char *p2 = (char *) memchr (src->p + o1 + 1, (int) d2, src->len);
+if (p2 == NULL) return 0;
+int o2 = p2 - src->p;
+
+int exlen = o2 - o1;
+if (exlen > exmax) return 0;
+
+memcpy (ex, src->p + o1, exlen);
+
+ex[exlen] = 0;
+
+return (exlen);
+} // bm extract char char
+
+
+int extract_CC (const buffer_t src, char *ex, const int exmax, const char d1, const char d2)
+{ // bm buffer_data extract char-char
+char *p1 = (char *) memchr (src.p, (int) d1, src.len);
+if (p1 == NULL) return 0;
+
+int o1 = p1 - src.p;
+
+
+char *p2 = (char *) memchr (src.p + o1 + 1, (int) d2, src.len);
+if (p2 == NULL) return 0;
+int o2 = p2 - src.p;
+
+int exlen = o2 - o1 - 1;
+if (exlen > exmax) return 0;
+
+memcpy (ex, src.p + o1 + 1, exlen);
+
+ex[exlen] = 0;
+
+return (exlen);
+} // bm extract char char
+
+struct buffer_data init_buffer (const int sz)
+{ // bm init_buffer
+struct buffer_data buffer; 
+if (sz == 0)
+{memset (&buffer, 0, sizeof (struct buffer_data)); return buffer;}
+
+buffer.p = (char *) malloc (sz + 1);
+if (buffer.p == NULL) killme ("error malloc");
+
+buffer.max = sz;
+buffer.len = 0;
+buffer.procint = 0;
+
+return buffer;
+   
+} // init buffer
+
+
+
+/*
+timer_c::timer_c ()
+{ // bm timer constructor
+clock_gettime (CLOCK_MONOTONIC, &start);
+}// timer constructor
+
+void timer_c::reset ()
+{ // bm timer reset
+clock_gettime (CLOCK_MONOTONIC, &start);
+} // timer
+
+void timer_c::stop () 
+{ //bm timer end
+clock_gettime (CLOCK_MONOTONIC, &end);
+} //timer end
+
+void timer_c::result (int *sec, int *ms)
+{ // bm timer get diff
+struct timespec temp;
+//if ((end.tv_nsec-start.tv_nsec)<0)
+if (end.tv_nsec < start.tv_nsec)
+{ 
+temp.tv_sec = end.tv_sec-start.tv_sec-1;
+temp.tv_nsec = 1000000000+end.tv_nsec-start.tv_nsec; 
+} else { 
+temp.tv_sec = end.tv_sec-start.tv_sec;
+temp.tv_nsec = end.tv_nsec-start.tv_nsec;
+} // if
+
+int millisec = temp.tv_nsec / 1000000;
+
+*sec = temp.tv_sec;
+*ms = millisec;
+
+}// timer get diff
+*/
+
+void err_ctl (const int rslt, const char *msg) {
+if (rslt < 0) {
+printf ("%s\n", msg);
+exit(0);
+}
+} //err_ctl
+
+
+void killme (const char *msg) {
+printf ("%s\n", msg);
+exit(0);
+} //killme
+
+
+char *parse_line (char *dest, const char *src)
+{ // bm parse_line 
+char *rtn = (char *) strchr (src, 10);
+if (rtn == NULL) return NULL;
+int len = rtn - src;
+memcpy (dest, src, len);
+dest [len] = 0;
+return rtn +1;
+ 
+} // parse_line
+
+int split_value (char *src, const char d, char *value)
+{ // bm split_value
+char *p1 = strchr (src, (int) d);
+if (p1 == NULL) return 0;
+
+int len = strlen (src);
+
+
+int d1 = p1 - src;
+//memset (value, 0, valsz);
+memcpy (value, src + d1 +1, len - d1 -1);
+value [len - d1 -1] = 0;
+src[d1] = 0;
+
+
+
+return 1;
+} // parse value
+
+
+int trim (char *totrim)
+{ // bm void trim
+int len = strlen (totrim);
+
+//trim beginning
+int count = 0;
+for (int i = 0; i !=len; ++i)
+{
+int trigger = 0;
+switch (totrim[i])
+{
+case 10: 
+++count;
+break;
+case 13:
+++count;
+break;
+case 32:
+++count;
+break;
+  
+default:
+goto fin1;
+  
+} // switch
+} // for
+    
+fin1:;
+if (count)
+{
+memmove (totrim, totrim + count, len - count);
+totrim [len - count] = 0;  // works partially
+//memset (totrim + len - count, 0, count);
+len -= count;
+///printf ("trimming %d\n", count);
+}
+
+int endtrim = 0;
+// trim end
+for (int i = len -1; i > 0; --i)
+{
+// printf ("i: %d (%c - <%d>)\n", i, totrim[i], totrim[i]);
+switch (totrim[i])
+{
+case 10: 
+totrim[i] = 0;
+++endtrim;
+break;
+case 13:
+totrim[i] = 0;
+++endtrim;
+break;
+case 32:
+totrim[i] = 0;
+++endtrim;
+break;
+
+default:
+i = 0;
+} // switch
+} // for
+
+len -= endtrim;
+return len;
+} // trim
+
+void save_buffer (const struct buffer_data b, const char *path)
+{ // bm save_buffer
+int localfd = open (path, O_WRONLY | O_TRUNC| O_CREAT, S_IRUSR | S_IWUSR);
+if (localfd < 0)
+	return ;
+
+write (localfd, b.p, b.len);
+
+
+close (localfd);
+}// save_page
+
+
+
 
 
 
