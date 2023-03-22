@@ -24,6 +24,7 @@
 #include <openssl/ssl.h>
 #include <openssl/err.h>
 
+// 10 mb
 #define sendfileunit 10000000 
 #define maxbuffer 100000
 #define nameholder 100
@@ -45,7 +46,7 @@ const int edit_mode_len = strlen (edit_mode);
 const int ace_builds_mode_len = strlen (ace_builds_mode);
 const int config_mode_len = strlen (config_mode);
 
-#define THREAD_POOL_SIZE 0
+#define THREAD_POOL_SIZE 5
 pthread_t thread_pool[THREAD_POOL_SIZE];
 pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_cond_t condition_var = PTHREAD_COND_INITIALIZER;
@@ -1824,24 +1825,12 @@ memcpy (encoded.p, request.mainbuff->p + d1, request.mainbuff->len - d1);
 encoded.len = request.mainbuff->len - d1;
 progress = request.mainbuff->len - d1;
 }
-//printf ("content en: %u, progress: %d\n", request.content_len, encoded.len);
-
-/*
-if (request.content_len == progress) {
-printf ("fully contained in first xmission \"\n");
-encoded.len -= 2;
-}
-*/
-
 
 while (progress < request.content_len) {
-encoded.len += sock_readold (request.fd, encoded.p + encoded.len, encoded.max);
+encoded.len += io_read1 (request.io, encoded.p + encoded.len, encoded.max);
 //printf ("multi-reciever\n");
 progress = encoded.len;
 }
-//printf ("finished cat json\n[%.*s]\n", encoded.len, encoded.p);
-
-//save_buffer (encoded, "JSONencoded.txt");
 
 char backup [string_sz];
 strcpy (backup, "old/");
@@ -1871,17 +1860,13 @@ printf ("errno %d\n", errno);
 killme ("cannot open file to save");
 } // if error
 
-
 write (localfd, decoded.p, decoded.len);
 close (localfd);
 
-send_txt2 (request.fd, "it worked");
+send_txt (request.io, "it worked");
 free (encoded.p);
 free (decoded.p);
-
-
 return 1;
-
 } //post edit
 
 
@@ -2161,7 +2146,7 @@ close (locfd);
 free (c_fbuffer);
 return 1;
 } // tls_send_file
-
+/*
 int send_file2 (const char *path, const int fd)
 { // bm sendfile2
 int locfd = open (path, O_RDONLY);
@@ -2208,7 +2193,7 @@ close (locfd);
 free (c_fbuffer);
 return 1;
 } // sendfile2
-
+*/
 int sock_setnonblock (const int fd)
 { // bm set nom block
 if (fcntl(fd, F_SETFL, fcntl(fd, F_GETFL, 0) | O_NONBLOCK) == -1)
@@ -2397,7 +2382,30 @@ int r = poll (&ev, 1, timeout * 1000);
 if (r == 0) return -1;
 
 int len = SSL_read (io.ssl, buffer, max);
+
+
+/*
 	
+if (interim_progress == -1)
+{
+int rt2 = SSL_get_error(io.ssl, interim_progress);
+
+if (rt2 == SSL_ERROR_WANT_WRITE || rt2 == SSL_ERROR_WANT_READ) {
+printf ("want r/w: ");
+continue;
+
+} else if (rt2 == SSL_ERROR_WANT_CONNECT || rt2 == SSL_ERROR_WANT_ACCEPT){
+printf ("want connect / accept\n");
+continue;
+    
+} else {
+printf ("non recoverable error\n");
+ return -1;
+} //if ssl get err
+
+*/
+
+
 return len;  
 }
 
