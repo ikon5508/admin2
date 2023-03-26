@@ -46,7 +46,7 @@ const int edit_mode_len = strlen (edit_mode);
 const int ace_builds_mode_len = strlen (ace_builds_mode);
 const int config_mode_len = strlen (config_mode);
 
-#define THREAD_POOL_SIZE 5
+#define THREAD_POOL_SIZE 0
 pthread_t thread_pool[THREAD_POOL_SIZE];
 pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_cond_t condition_var = PTHREAD_COND_INITIALIZER;
@@ -1549,7 +1549,7 @@ io_write (request.io, outbuff.p, outbuff.len);
 
 int r = send_file (request.io, request.full_path);
 //int r = send_file2 (request.full_path, request.fd);
-printf ("send file: %d\n", r);
+//printf ("send file: %d\n", r);
 return r;
 
 } // serv_file`
@@ -1593,7 +1593,7 @@ if (p1 != NULL) {
 path_start = edit_mode_len;
 request->mode = edit;
 request->mode_text = edit_mode;
-printf ("edit mode det!\n");
+//printf ("edit mode det!\n");
 } // if edit_mode
 
 p1 = strstr (request->url, action_mode);
@@ -2377,21 +2377,22 @@ int tls_read1 (const io_t io, char *buffer, const int max)
   struct pollfd ev;
 ev.fd = io.connfd;
 ev.events = POLLIN;
+printf ("tls read1\n");
 
 int r = poll (&ev, 1, timeout * 1000);
 if (r == 0) return -1;
 
-int len = SSL_read (io.ssl, buffer, max);
-
-
-/*
-	
-if (interim_progress == -1)
+int len = -1;
+while (len == -1)
 {
-int rt2 = SSL_get_error(io.ssl, interim_progress);
+len = SSL_read (io.ssl, buffer, max);
+
+if (len == -1)
+{
+int rt2 = SSL_get_error(io.ssl, len);
 
 if (rt2 == SSL_ERROR_WANT_WRITE || rt2 == SSL_ERROR_WANT_READ) {
-printf ("want r/w: ");
+printf ("r/w: ");
 continue;
 
 } else if (rt2 == SSL_ERROR_WANT_CONNECT || rt2 == SSL_ERROR_WANT_ACCEPT){
@@ -2401,10 +2402,9 @@ continue;
 } else {
 printf ("non recoverable error\n");
  return -1;
-} //if ssl get err
-
-*/
-
+} // if r2
+} // if len
+}// while
 
 return len;  
 }
@@ -2642,7 +2642,7 @@ int copylen = current->delim_pos - boffset;
 memcpy (rtn.p + offset, base + boffset, copylen);
 
 offset += copylen;
-printf ("delim lrn: %d \n", current->delim_len);
+//printf ("delim lrn: %d \n", current->delim_len);
 boffset += copylen + current->delim_len;
 //len += copylen;
 
@@ -2833,7 +2833,7 @@ int len = req_len - out.len;
 if (len > 0) {
 memcpy (out.p + out.len, in.p + tail +1, len);
 out.len += len;
-printf ("added!!\n");
+//printf ("added!!\n");
 }else{
 
 switch (inst[inst_count -1].dchar) {
