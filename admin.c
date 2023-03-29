@@ -241,21 +241,21 @@ int sock_buffwrite (const int connfd, struct buffer_data *out);
 int sock_readold (const int connfd, void *buffer, int size);
 int sock_writeold (const int connfd, char *out, const int len);
 
+// bm func def
 int sock_write1 (const io_t, const char *, const int);
 int sock_write (const io_t, const char *, const int);
-int sock_read (const io_t, char *, const int);
+int sock_read (const io_t, char *, int, const int);
 int sock_read1 (const io_t, char *, const int);
 int sock_send_file (const io_t, const char *);
 
-// bm func def
 int tls_read1 (const io_t, char *, const int);
-int tls_read (const io_t, char *, const int);
+int tls_read (const io_t, char *, int, const int);
 int tls_write (const io_t, const char *, const int);
 int tls_write1 (const io_t, const char *, const int);
 int tls_send_file (const io_t, const char *);
 
 int (*io_read1) (const io_t, char *, const int) = tls_read1;
-int (*io_read) (const io_t, char *, const int) = tls_read;
+int (*io_read) (const io_t, char *, int, const int) = tls_read;
 int (*io_write) (const io_t, const char *, const int) = tls_write;
 int (*io_write1) (const io_t, const char *, const int) = tls_write1;
 int (*send_file) (const io_t, const char *) = tls_send_file;
@@ -866,8 +866,8 @@ if (settings.tls == true)
 io.ssl = SSL_new(ctx);
 SSL_set_fd(io.ssl, connfd);
 int rtn = tls_accept (&io);
-if (rtn == -1) {close (connfd); return -1;}
-printf ("thread func ssl %p\n", io.ssl);
+if (rtn == -1) {goto endp; /*close (connfd); return -1;*/}
+//printf ("thread func ssl %p\n", io.ssl);
 }
 
 // bm keep alive loop
@@ -878,19 +878,14 @@ inbuff.len = io_read1 (io, inbuff.p, inbuff.max);
 if (inbuff.len == -1)
 { 
 printf ("[%d, (%d)] client timed out\n", thread_id, connfd); 
-if (settings.tls == true) 
-{
-//SSL_shutdown(io.ssl);
-//SSL_free(io.ssl);
-}
-close (connfd); break;
+break;
 }
 inbuff.p[inbuff.len] = 0;
 
 //struct post_file_data filedata;
 struct request_data request;
 int ret = parse_request (&request, connfd, inbuff);
-if (ret == 0) {close (connfd); break;}
+if (ret == 0) break;
 
 request.mainbuff = &inbuff;
 request.io = io;
@@ -906,11 +901,11 @@ process_post (io, request);
 
 
 } // keep alive loop
-
+endp:;
 if (settings.tls == true) 
 {
-//SSL_shutdown(io.ssl);
-//SSL_free(io.ssl);
+SSL_shutdown(io.ssl);
+SSL_free(io.ssl);
 }
 //send_txt2 (connfd, "it works, thanks");
 close (io.connfd);
@@ -944,6 +939,8 @@ for (int i = 1; i < argc; ++i)
 if (!strcmp (argv[i], "-p"))
 settings.port = atoi (argv[i+1]);
 
+//if (!strcmp (argv[i], "-tc"))
+//THREAD_POOL_SIZE = atoi (argv[i+1]);
 
 if (!strcmp (argv[i], "-dir"))
 strcpy (settings.base_path, argv[i+1]);
@@ -963,6 +960,7 @@ int servfd = prepsocket (settings.port);
 
 if (settings.tls == true)
 {ctx = create_context(); configure_context(ctx);}
+else printf ("tls off\n");
 
 printf ("admin load\nPort: %d\nPath: %s\nEditor: %s\n", settings.port, settings.base_path, settings.editor);
 
@@ -1787,13 +1785,10 @@ buffer_t page = far_build (&builder);
 struct string_data head;
 head.len = sprintf (head.p, "%s%s%s%d\n\n", hthead, conthtml, contlen, page.len);
 
-printf ("%d bytes: edit file served\n", page.len);
+//printf ("%d bytes: edit file served\n", page.len);
 
 io_write (request.io, head.p, head.len);
 io_write (request.io, page.p, page.len);
-//sock_1writeold (request.fd, head.p, head.len);
-//sock_buffwrite (request.fd, &page);
-
 //save_buffer (page, "get_edit.txt");
 
 free (page.p);
@@ -1812,26 +1807,33 @@ int post_edit (const struct request_data request)
 //save_buffer (request.mainbuff, "POST_EDIT.txt");
 
 
-int progress = 0;
+//int progress = 0;
 
 buffer_t encoded = init_buffer (request.content_len);
 //memset (encoded.p, 0, encoded.max)
 
 char *p1 = strchr (request.mainbuff->p, (int) '\"');
 if (p1 != NULL) {
-printf ("started in 1st xmission\n");
+//printf ("started in 1st xmission\n");
 int d1 = p1 - request.mainbuff->p;
 memcpy (encoded.p, request.mainbuff->p + d1, request.mainbuff->len - d1);
 encoded.len = request.mainbuff->len - d1;
-progress = request.mainbuff->len - d1;
+//progress = request.mainbuff->len - d1;
 }
 
+/*
+int count = 0;
 while (progress < request.content_len) {
+++count;
 encoded.len += io_read1 (request.io, encoded.p + encoded.len, encoded.max);
 //printf ("multi-reciever\n");
 progress = encoded.len;
 }
+printf ("reader count: %d\n", count);
+*/
 
+encoded.len = io_read (request.io, encoded.p, encoded.len, encoded.max);
+/*
 char backup [string_sz];
 strcpy (backup, "old/");
 strcat (backup, "%H:%M-");
@@ -1851,7 +1853,7 @@ printf ("backup name [%s]\n", outstr);
 
 if (rename (request.full_path, outstr) == -1)
 	printf ("error moving backup file\n");
-
+*/
 buffer_t decoded = JSON_decode (encoded);
 
 int localfd = open (request.full_path, O_WRONLY | O_TRUNC| O_CREAT, S_IRUSR | S_IWUSR);
@@ -2043,6 +2045,7 @@ struct buffer_data fbuff;
 fbuff.p = c_fbuffer;
 fbuff.max = sendfileunit;
 
+int end_code = -1;
 
 while (read_progress < fsize)
 {  
@@ -2051,36 +2054,38 @@ read_progress += fbuff.len;
 
 
 int rtn = poll (&pfd, 1, timeout * 1000);
-if (rtn < 0) return -1;
+if (rtn < 0) goto end_pnt;
 
 int interim_progress = write (io.connfd, fbuff.p, fbuff.len);
 if (interim_progress == -1)
-	return -1;
+	goto end_pnt;
 
 int cpylen = interim_progress;
 while (cpylen < fbuff.len)
 {
 
 int rtn = poll (&pfd, 1, timeout * 1000);
-if (rtn < 0) return -1;
+if (rtn < 0) goto end_pnt;
 interim_progress = write (io.connfd, fbuff.p + cpylen, fbuff.len - cpylen);
 if (interim_progress == -1)
-	return -1;
+	goto end_pnt;
 cpylen += interim_progress;
 } // while
 
 } // while loop
+end_code = 1;
+end_pnt:;
 close (locfd);
 free (c_fbuffer);
-return 1;
+
+
+return end_code;
 
 } // sock_send_file
 
 
 int tls_send_file (const io_t io, const char *path)
 { // bm tls sendfile
-
-//return send_file2 (path, io.connfd);
 struct pollfd pfd;
 pfd.fd = io.connfd;
 pfd.events = POLLOUT;
@@ -2098,14 +2103,14 @@ size_t read_progress = 0;
 size_t write_progress = 0;
 
 size_t fsize = finfo.st_size;
-printf ("file size: %zu\n", fsize);
+//printf ("file size: %zu\n", fsize);
 
 char *c_fbuffer = (char *) malloc (sendfileunit);
 struct buffer_data fbuff;
 fbuff.p = c_fbuffer;
 fbuff.max = sendfileunit;
 
-
+int end_code = -1;
 while (read_progress < fsize)
 {  
 fbuff.len = read (locfd, fbuff.p, fbuff.max);
@@ -2115,26 +2120,26 @@ int interim_progress = -1;
 while (interim_progress == -1)
 {
 int rtn = poll (&pfd, 1, timeout * 1000);
-if (rtn < 0) return -1;
+if (rtn < 0) goto end_pnt;
 interim_progress = SSL_write (io.ssl, fbuff.p, fbuff.len);
 if (interim_progress == -1)
 {
 int rt2 = SSL_get_error(io.ssl, interim_progress);
 
 if (rt2 == SSL_ERROR_WANT_WRITE || rt2 == SSL_ERROR_WANT_READ) {
-printf ("want r/w: ");
+//printf ("want r/w: ");
 continue;
 
 } else if (rt2 == SSL_ERROR_WANT_CONNECT || rt2 == SSL_ERROR_WANT_ACCEPT){
-printf ("want connect / accept\n");
+//printf ("want connect / accept\n");
 continue;
     
 } else {
-printf ("non recoverable error\n");
- return -1;
+//printf ("non recoverable error\n");
+ goto end_pnt;
 } //if ssl get err
 
-}else printf ("%d written\n", interim_progress); // if -1
+}//else printf ("%d written\n", interim_progress); // if -1
 } // while
 
 
@@ -2142,9 +2147,12 @@ printf ("non recoverable error\n");
 
 } // while read
 
+end_code = 1;
+end_pnt:;
+
 close (locfd);
 free (c_fbuffer);
-return 1;
+return end_code;
 } // tls_send_file
 /*
 int send_file2 (const char *path, const int fd)
@@ -2377,7 +2385,7 @@ int tls_read1 (const io_t io, char *buffer, const int max)
   struct pollfd ev;
 ev.fd = io.connfd;
 ev.events = POLLIN;
-printf ("tls read1\n");
+//printf ("tls read1\n");
 
 int r = poll (&ev, 1, timeout * 1000);
 if (r == 0) return -1;
@@ -2392,15 +2400,15 @@ if (len == -1)
 int rt2 = SSL_get_error(io.ssl, len);
 
 if (rt2 == SSL_ERROR_WANT_WRITE || rt2 == SSL_ERROR_WANT_READ) {
-printf ("r/w: ");
+//printf ("r/w: ");
 continue;
 
 } else if (rt2 == SSL_ERROR_WANT_CONNECT || rt2 == SSL_ERROR_WANT_ACCEPT){
-printf ("want connect / accept\n");
+//printf ("want connect / accept\n");
 continue;
     
 } else {
-printf ("non recoverable error\n");
+//printf ("non recoverable error\n");
  return -1;
 } // if r2
 } // if len
@@ -2423,37 +2431,79 @@ int len = read (io.connfd, buffer, max);
 return len;  
 }
 
-int tls_read (const io_t io, char *buffer, const int max)
+int tls_read (const io_t io, char *buffer, int len, const int max)
 { // bm tls_read
-  struct pollfd ev;
+struct pollfd ev;
 ev.fd = io.connfd;
 ev.events = POLLIN;
+//printf ("tls read\n");
+//int len = 0;
 
+while (len < max)
+{
 int r = poll (&ev, 1, timeout * 1000);
-if (r == 0) return -1;
+if (r == 0) return len;
 
-int len = SSL_read (io.ssl, buffer, max);
-	
+r = -1;
+while (r == -1)
+{
+r = SSL_read (io.ssl, buffer + len, max - len);
+
+if (r == -1)
+{
+int rt2 = SSL_get_error(io.ssl, r);
+
+if (rt2 == SSL_ERROR_WANT_WRITE || rt2 == SSL_ERROR_WANT_READ) {
+//printf ("r/w: "); 
+continue;
+
+} else if (rt2 == SSL_ERROR_WANT_CONNECT || rt2 == SSL_ERROR_WANT_ACCEPT){
+//printf ("want connect / accept\n");
+continue;
+    
+} else {
+//printf ("non recoverable error\n");
+ return len;
+} // if r2
+} // if len
+len += r;
+}// while
+
+} // while
 return len;  
-}
+} // tla_read
 
-int sock_read (const io_t io, char *buffer, const int max)
+int sock_read (const io_t io, char *buffer, int len, const int max)
 { // bm sock_read
   struct pollfd ev;
 ev.fd = io.connfd;
 ev.events = POLLIN;
+//int len = 0;
 
+
+while (len < max)
+{
 int r = poll (&ev, 1, timeout * 1000);
-if (r == 0) return -1;
+if (r == 0) return len;
 
-int len = read (io.connfd, buffer, max);
-	
+ r = read (io.connfd, buffer + len, max - len);
+if (r <= 0)
+{printf ("EOF\n"); return len;}
+else
+len += r;
+
+} // loop 	
 return len;  
-}
+
+
+
+
+
+} // sock read
 
 int tls_write (const io_t io, const char *buffer, const int size)
 {// tls_write
-printf ("tls writing\n");
+//printf ("tls writing\n");
 struct pollfd ev;
 ev.fd = io.connfd;
 ev.events = POLLOUT;
@@ -2470,7 +2520,7 @@ prtn = poll (&ev, 1, timeout * 1000);
 if (prtn < 1) return -1;
    
 rtn = SSL_write (io.ssl, buffer + accrue, size - accrue);
-if (rtn <= 0) return 1;
+if (rtn <= 0) return -1;
 accrue += rtn;
 }
 return accrue;
@@ -2728,7 +2778,7 @@ if (p1 == NULL) break;
 if (inst_count == inst_max)
 {
 inst_max += increment;
-printf ("resizing instruction array\n");
+//printf ("resizing instruction array\n");
 inst = realloc (inst, sizeof (struct codeco) * inst_max);
 if (inst == NULL) killme ("no realloc");
 } //if
