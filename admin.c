@@ -24,6 +24,7 @@
 #include <openssl/ssl.h>
 #include <openssl/err.h>
 
+#include <openssl/sha.h>
 // 10 mb
 #define sendfileunit 10000000 
 #define maxbuffer 100000
@@ -33,18 +34,19 @@
 #define smbuff_sz 2048
 #define mdbuff_sz 10000
 #define lgbuff_sz 100000
-
 #define upload_mode "/upload"
 #define edit_mode "/edit"
 #define action_mode "/action"
 #define ace_builds_mode "/ace-builds"
 #define config_mode "/config"
+#define websock_mode "/websock"
 
 const int upload_mode_len = strlen (upload_mode);
 const int action_mode_len = strlen (action_mode);
 const int edit_mode_len = strlen (edit_mode);
 const int ace_builds_mode_len = strlen (ace_builds_mode);
 const int config_mode_len = strlen (config_mode);
+const int websock_mode_len = strlen (websock_mode);
 
 #define THREAD_POOL_SIZE 0
 pthread_t thread_pool[THREAD_POOL_SIZE];
@@ -203,7 +205,6 @@ int trim (char *totrim);
 buffer_t JSON_decode (const buffer_t in);
 void buffer_sanity (buffer_t *buff, const int req, const int inc);
 buffer_t HTML_encode (const buffer_t in, const int level);
-void save_buffer (const struct buffer_data b, const char *path);
 int URL_decode (const char *in, char *out);
 //typedef struct blueprint blueprint_t;
 struct far_builder far_init (const buffer_t *in);
@@ -214,16 +215,16 @@ int get_fname (struct post_file_data *filedata, const buffer_t inbuff);
 int get_boundary (struct post_file_data *filedata, const buffer_t inbuff); 
 void softclose (const int fd, struct buffer_data *inbuff);
 int getnext (const char *base, const int c, const int offset, const int len);
+
 int prepsocket (const int PORT);
 int sock_setnonblock (const int fd);
 int send_file2 (const char *path, const int fd);
 //int send_file (const io_t io, const char *path);
-void save_buffer (const struct buffer_data b, const char *path);
+void save_buffer (const struct buffer_data *b, const char *path);
 void safe_fname (const struct request_data request, const char *fname, char *rtn);
 int servico (const io_t);
 void softclose (const int fd, struct buffer_data *inbuff);
 int send_err (const int fd, const int code);
-int send_txt2 (const int fd, const char *txt);
 int send_ftxt (const int fd, const char *format, ...);
 int serv_dir (const struct request_data request);
 int serv_file (const struct request_data request);
@@ -236,10 +237,10 @@ int get_config (const struct settings_data settings, const struct request_data r
 int send_txt (const io_t io, const char *txt);
 
 // old io funcs
-int sock_1writeold (const int connfd, const char *buffer, const int size);
-int sock_buffwrite (const int connfd, struct buffer_data *out);
-int sock_readold (const int connfd, void *buffer, int size);
-int sock_writeold (const int connfd, char *out, const int len);
+//int sock_1writeold (const int connfd, const char *buffer, const int size);
+//int sock_buffwrite (const int connfd, struct buffer_data *out);
+//int sock_readold (const int connfd, void *buffer, int size);
+//int sock_writeold (const int connfd, char *out, const int len);
 
 // bm func def
 int sock_write1 (const io_t, const char *, const int);
@@ -482,8 +483,8 @@ int doclen = sprintf (outbuff, "<html><body><script>window.alert(\"%s\"); window
 
 int headlen = sprintf (head, "%s%s%s%s%d\n\n", hthead, conthtml, connclose, contlen, doclen);
 
-sock_writeold (fd, head, headlen);
-sock_writeold (fd, outbuff, doclen);
+//sock_writeold (fd, head, headlen);
+//sock_writeold (fd, outbuff, doclen);
 
 return 1;
 } //send_mredirect
@@ -499,13 +500,13 @@ int doclen = sprintf (outbuff, "<html><body><script>window.location=\"%s\";</scr
 
 int headlen = sprintf (head, "%s%s%s%s%d\n\n", hthead, conthtml, connclose, contlen, doclen);
 
-sock_writeold (fd, head, headlen);
-sock_writeold (fd, outbuff, doclen);
+//sock_writeold (fd, head, headlen);
+//sock_writeold (fd, outbuff, doclen);
 
 return 1;
 } //send_redirect
 
-/*
+
 int Base64Encode(const unsigned char* buffer, size_t length, char **b64text) { //Encodes a binary safe base 64 string
 	BIO *bio, *b64;
 	BUF_MEM *bufferPtr;
@@ -525,61 +526,80 @@ int Base64Encode(const unsigned char* buffer, size_t length, char **b64text) { /
 
 	return (0); //success
 }
-*/
+
 // bm websock
-void getwebsock (const struct request_data request)
+int get_websock (const struct request_data request)
 {
+
+//printf ("mainbuff\n[%.*s]", request.mainbuff->len, request.mainbuff->p);
 /*
+int d1 = strsearch (request.mainbuff->p, "Sec-WebSocket-Key: ", d1);
+if (d1 == -1) return 0;
+int d2 = getnext (request.mainbuff->p, 13, d1, request.mainbuff->len);
+if (d2 == -1) return 0;
+*/
 
-d1 = strsearch (inbuff.p, "Sec-WebSocket-Key: ", d1, inbuff.len);
-d2 = getnext (inbuff.p, 13, d1, inbuff.len);
-strncpy (request.code, inbuff.p + d1, d2 - d1);
-//request.codelen = midstr (inbuff.p, request.code, d1, d2);
-request.codelen = d2 - d1;
-return request;
+char *p1 = memmem (request.mainbuff->p, request.mainbuff->len, "Sec-WebSocket-Key: ", 19);
+if (p1 == NULL) killme ("none p1");
+int d1 = p1 - request.mainbuff->p + 19; 
 
-   printf ("getwebsock\n");
+int d2 = getnext (request.mainbuff->p, 10, d1, request.mainbuff->len);
+if (d2 == -1) return 0;
+printf ("d1: %d, d2: %d\n", d1, d2);
 
-struct string_data inbuff;
+char client_key [default_sz];
+//int key_len = midstr (request.mainbuff->p, client_key, d1, d2);
+int key_len = d2 - d1;
+memcpy (client_key, request.mainbuff->p + d1, key_len);
+client_key [key_len] = 0;
+
+buffer_t t;
+t.p = client_key;
+t.len = key_len;
+//save_buffer (&t, "wkey.txt");
+
+printf ("client key (%d)  [%*.s]\n", key_len, key_len, client_key);
+//return 0;
+
 
 const char *response = "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: ";
 
 char *append = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
 
 char tosha [string_sz];
-//size_t len = sprintf (tosha, "%s%s", request.code, append);
+sprintf (tosha, "%s%s", client_key, append);
 
-//strcpy (tosha, request.code);
-//strcat (tosha, append);
-//size_t len = strlen (tosha);
-
-unsigned char *conv = (unsigned char*)tosha;
+unsigned char *utosha = (unsigned char *) tosha;
 //char data[] = "Hello, world!";
-//size_t length = strlen(data);
 unsigned char hash[SHA_DIGEST_LENGTH];
-//SHA1(conv, len, hash); // hash now contains the 20-byte SHA-1 hash
+SHA1(utosha, SHA_DIGEST_LENGTH, hash); // hash now contains the 20-byte SHA-1 hash
 
-//printf ("hash: %s\n", hash);
+printf ("hash: %s\n", hash);
 
 char *b64rtn;
 
 
   Base64Encode(hash, SHA_DIGEST_LENGTH, &b64rtn);
 
+printf ("b64: %s\n", b64rtn);
+return 0;
 
 char handshake [200];
-len = sprintf (handshake, "%s%s\r\n\r\n", response, b64rtn);
+int len = sprintf (handshake, "%s%s\r\n\r\n", response, b64rtn);
 
-int a = sock_1writeold (request.fd, handshake, len);
+int a = io_write1 (request.io, handshake, len);
 
 if (a != len)
-	printf ("sorry\n");
+	printf ("sorry no handshake\n");
 
-//printf ("[ %s ] done\n", handshake);
+//printf ("[%.*s] done\n", len, handshake);
 //
-inbuff.len = sock_readold (request.fd, inbuff.p, string_sz);
-//printf ("%s\n", inbuff.p);
+buffer_t inbuff = init_buffer (string_sz);
+inbuff.len = io_read1 (request.io, inbuff.p, string_sz);
+printf ("(%d)%.*s\n", inbuff.len, inbuff.len, inbuff.p);
 
+//inbuff.len = io_read1 (request.io, inbuff.p, string_sz);
+//printf ("(%d)%.*s\n", inbuff.len, inbuff.len, inbuff.p);
 //int localfd = open (request.full_path, O_WRONLY | O_TRUNC| O_CREAT, S_IRUSR | S_IWUSR);
 int loc = open ("frame.bin",  O_WRONLY | O_TRUNC| O_CREAT, S_IRUSR | S_IWUSR);
 if (loc ==-1)
@@ -589,7 +609,15 @@ write (loc, inbuff.p, inbuff.len);
 
 printf ("len: %d\n", inbuff.len);
 
-*/
+free (inbuff.p);
+
+
+a = io_write1 (request.io, "hello", 5);
+
+if (a <= 0)
+	printf ("sorry no message\n");
+
+return 1;
 } // websock
 
 /*
@@ -634,6 +662,9 @@ case favicon:
 break;
 case edit:
 	get_edit (request);
+break;
+case websock:
+get_websock (request);
 break;
 default:
 
@@ -762,7 +793,7 @@ res.len += snprintf (res.p + res.len, res.max, "%s", buffer);
 res.p [res.len] = 0;
 //buffer [len] = 0;
 //printf ("recieved(%d): %.*s\n", len, len, buffer);
-send_txt2 (request.fd, res.p);
+send_txt (request.io, res.p);
 return 1;
 } // if else child
 
@@ -907,7 +938,6 @@ if (settings.tls == true)
 SSL_shutdown(io.ssl);
 SSL_free(io.ssl);
 }
-//send_txt2 (connfd, "it works, thanks");
 close (io.connfd);
 return 1;
 } // process connection
@@ -929,9 +959,28 @@ process_connection (data->id, connfd);
 } // thread loop
 return NULL;
 } // thread function
+void test () 
+{
+char r [smbuff_sz];
+buffer_t in;
+in.p = r;
+in.max = smbuff_sz;
+
+int fd = open ("mainbuff.txt", O_RDONLY);
+in.len = read (fd, in.p, in.max);
+printf ("in len: %d\n", in.len);
+
+struct request_data req;
+req.mainbuff = &in;
+
+get_websock (req);
+printf ("exiting test\n");
+exit (0);
+}
 
 int main (int argc, char **argv)
 { // bm main top
+//test ();
 signal(SIGPIPE, SIG_IGN);
 for (int i = 1; i < argc; ++i)
 {
@@ -1268,11 +1317,11 @@ const char *template_path = "internal/dir.htm";
 //printf ("servdir!!!!!!!\n");
 struct stat finfo;
 if (stat (template_path, &finfo) != 0)
-	{send_txt2 (request.fd, "cant stat dir template"); return 0;}
+	{send_txt (request.io, "cant stat dir template"); return 0;}
 
 buffer_t dir_template = init_buffer (finfo.st_size);
 int dirfd = open (template_path, O_RDONLY);
-if (dirfd < 0) {send_txt2 (request.fd, "cannot open dir template"); return 0;}
+if (dirfd < 0) {send_txt (request.io, "cannot open dir template"); return 0;}
 dir_template.len = read (dirfd, dir_template.p, dir_template.max);
 close (dirfd);
 
@@ -1284,7 +1333,7 @@ buffer_t dir_list = init_buffer (lgbuff_sz);
 
 dp = opendir (request.full_path);
 if (dp == NULL)
-	{send_txt2 (request.fd, "OOPS"); return -1;}
+	{send_txt (request.io, "OOPS"); return -1;}
 
 while ((ep = readdir (dp)))
 {
@@ -1357,127 +1406,6 @@ return 1;
 
 } // serv_dir
 
-int serv_dirold (const struct request_data request)
-{//bm serv_dirold
-DIR *dp;
-struct dirent *ep;
-
-char outb [maxbuffer];
-struct buffer_data out;
-out.p = outb;
-out.len = 0;
-out.max = maxbuffer;
-
-
- buffcatf (&out, "<!DOCTYPE html>\n<html>\n<head>\n");
-
- buffcatf (&out,"<style>\n");
- buffcatf (&out,"body\n{\ntext-align:left;\nmargin-left:70px;\nbackground-color:aqua;\nfont-size:24px;\n}\n");
- buffcatf (&out, "a:link\n{\ncolor:midnightblue;\ntext-decoration:none;\n}\n");
-
-
-buffcatf (&out, ".button {\npadding-left:20px;\npadding-right:20px;\nfont-size:18px;\n}");
- buffcatf (&out, "</style>\n</head>\n<body>\n");
-
-buffcatf (&out, "<script>");
-buffcatf (&out, "function get_multi () { \n");
-
-buffcatf (&out, "var count = window.prompt (\"How Many\", 2);\n");
-buffcatf (&out, "var content = \"<form enctype=\'multipart/form-data\' action=\'%s\' method=\'post\'>\";\n", request.url);
-buffcatf (&out, "var i;\n");
-buffcatf (&out, "for (i= 0; i < count; ++i)\n");
-buffcatf (&out, "content += \"<input type=\'file\' class=\'button\' name=\'myFile\'>\";\n");
-buffcatf (&out, "content += \"<input type=\'submit\' class=\'button\'  value=\'upload\'>\";\n");
-buffcatf (&out, "content += \"</form>\";\n");
-buffcatf (&out, "document.getElementById(\"uploader\").innerHTML = content;\n}\n");
-
-
-// end function
-
-buffcatf (&out, "</script>\n");
-
-
-dp = opendir (request.full_path);
-if (dp == NULL)
-	{send_txt2 (request.fd, "OOPS"); return -1;}
-
-buffcatf (&out, "%s<br>\n", request.path);
-
-buffcatf (&out, "<input type=\"button\" class=\"button\" value=\"make\">\n");
-
-buffcatf (&out, "<input type=\"button\" class=\"button\" value=\"mkdir\">\n");
-buffcatf (&out, "<input type=\"button\" class=\"button\" value=\"new\"><br>\n");
-
-buffcatf (&out, "<input type=\"button\" class=\"button\" value=\"search\">\n");
-// addonclick here
-buffcatf(&out, "<input type=\"button\" class=\"button\" value=\"Multiple Upload\" onclick=\"get_multi ()\">\n");
-//
-
-buffcatf (&out, "<div id=\"uploader\">\n");
-buffcatf (&out, "<form enctype=\"multipart/form-data\" action=\"%s\" method=\"post\">\n", request.url);
-buffcatf (&out, "<input type=\"file\" class=\"button\" name=\"myFile\">\n");
-buffcatf (&out, "<input type=\"submit\" class=\"button\"  value=\"upload\">\n</form>\n");
-buffcatf (&out, "</div>\n");
-
-while ((ep = readdir (dp)))
-{
-if (ep->d_name[0] == '.')
-	continue;
-	
-// 4 is dir 8 is file
-
-if (ep->d_type == 4)
-
-(request.url[strlen (request.url) - 1] == '/')?
-buffcatf (&out, "<a href=\"%s%s\">%s/</a><br>\n", request.url, ep->d_name, ep->d_name):
-buffcatf (&out, "<a href=\"%s/%s\">%s/</a><br>\n", request.url, ep->d_name, ep->d_name);
-
-//printf ("char: %c, dirname is: %s\n", request.url[strlen (request.url) - 1], request.url.p);
-} // while
-
-closedir (dp);
-dp = opendir (request.full_path);
-
-while ((ep = readdir (dp)))
-{
-if (ep->d_name[0] == '.')
-	continue;
-	
-if (ep->d_type == 8)
-
-if (settings.showaction > 0)	
-(request.url[strlen (request.url) - 1] == '/')?
-buffcatf (&out, "<a href=\"/action%s%s\">%s</a><br>\n", request.path, ep->d_name, ep->d_name):
-buffcatf (&out, "<a href=\"/action%s/%s\">%s</a><br>\n", request.path, ep->d_name, ep->d_name);
-
-
-if (settings.showaction == 0)	
-(request.url[strlen (request.url) - 1] == '/')?
-buffcatf (&out, "<a href=\"/file%s%s\">%s</a><br>\n", request.path, ep->d_name, ep->d_name):
-buffcatf (&out, "<a href=\"/file%s/%s\">%s</a><br>\n", request.path, ep->d_name, ep->d_name);
-
-
-//stradd (outbuff.p, ep->d_name, &outbuff.len);
-
-} // while
-
-
-
-buffcatf (&out, "</body>\n</html>");
-// save page
-save_buffer (out, "dir.htm");
-//savepage
-printf ("%d: bytes directory info\n", out.len);
-struct string_data head;
-
-head.len = sprintf (head.p, "%s%s%s%d\n\n", hthead, conthtml, contlen, out.len);
-sock_1writeold (request.fd, head.p, head.len);
-sock_buffwrite (request.fd, &out);
-
-closedir (dp);
-
-return 1;
-} // serv_dir
 
 int serv_file (const struct request_data request)
 { // bm serv_file
@@ -1617,6 +1545,14 @@ request->mode = upload;
 request->mode_text = upload_mode;
 } // if upload_mode
 
+p1 = strstr (request->url, websock_mode);
+if (p1 != NULL) {
+path_start = websock_mode_len;
+request->mode = websock;
+request->mode_text = websock_mode;
+} // if websock_mode
+
+
 p1 = strstr (request->url, ace_builds_mode);
 if (p1 != NULL) {
 //path_start = 0;
@@ -1726,18 +1662,18 @@ buffer_t filedata;
 struct stat finfo;
 char editor_path [smbuff_sz];
 sprintf (editor_path, "internal/%s", settings.editor);
-if (stat (editor_path, &finfo)) {send_txt2 (request.fd, "cant stat Editor"); return 0;}
+if (stat (editor_path, &finfo)) {send_txt (request.io, "cant stat Editor"); return 0;}
 editor = init_buffer (finfo.st_size);
 int editor_fd = open (editor_path, O_RDONLY);
-if (editor_fd < 0) {send_txt2 (request.fd, "cant open Editor"); return 0;}
+if (editor_fd < 0) {send_txt (request.io, "cant open Editor"); return 0;}
 editor.len = read (editor_fd, editor.p, editor.max);
 editor.p[editor.len] = 0;
 close (editor_fd);
 
-if (stat (request.full_path, &finfo)) {send_txt2 (request.fd, "cant stat FILE"); return 0;}
+if (stat (request.full_path, &finfo)) {send_txt (request.io, "cant stat FILE"); return 0;}
 filedata = init_buffer (finfo.st_size);
 int file_fd = open (request.full_path, O_RDONLY);
-if (file_fd < 0) {send_txt2 (request.fd, "cant open FILE"); return 0;}
+if (file_fd < 0) {send_txt (request.io, "cant open FILE"); return 0;}
 filedata.len = read (file_fd, filedata.p, filedata.max);
 filedata.p[filedata.len] = 0;
 close (file_fd);
@@ -1833,7 +1769,7 @@ printf ("reader count: %d\n", count);
 */
 
 encoded.len = io_read (request.io, encoded.p, encoded.len, encoded.max);
-/*
+
 char backup [string_sz];
 strcpy (backup, "old/");
 strcat (backup, "%H:%M-");
@@ -1853,7 +1789,7 @@ printf ("backup name [%s]\n", outstr);
 
 if (rename (request.full_path, outstr) == -1)
 	printf ("error moving backup file\n");
-*/
+
 buffer_t decoded = JSON_decode (encoded);
 
 int localfd = open (request.full_path, O_WRONLY | O_TRUNC| O_CREAT, S_IRUSR | S_IWUSR);
@@ -1909,12 +1845,12 @@ void safe_fname (const struct request_data request, const char *fname, char *rtn
 int send_err (const int fd, const int code)
 { // bm send err
 
-if (code == 410)
-	sock_1writeold (fd, "HTTP/1.1 410 GONE", 0);
+//if (code == 410)
+	//sock_1writeold (fd, "HTTP/1.1 410 GONE", 0);
 
 
-if (code == 500)
-	sock_1writeold (fd, "HTTP/1.1 500 ERROR", 0);
+//if (code == 500)
+	//sock_1writeold (fd, "HTTP/1.1 500 ERROR", 0);
 
 return 1;
 } // send_err
@@ -1935,84 +1871,10 @@ outbuff.len = snprintf (outbuff.p, maxbuffer, "%s%s%s%s%d\n\n%.*s", hthead, cont
 io_write (io, outbuff.p, outbuff.len);
 
 return 1;
-} // send_txt2
-
-int send_txt2 (const int fd, const char *txt)
-{
-
-int len = strlen (txt);
-
-char outbuffer [maxbuffer];
-struct buffer_data outbuff;
-outbuff.p = outbuffer;
-outbuff.len = 0;
-outbuff.max = maxbuffer;
-
-outbuff.len = sprintf (outbuff.p, "%s%s%s%s%d\n\n%.*s", hthead, conttxt, connclose, contlen, len, len, txt);
-
-sock_buffwrite (fd, &outbuff);
-
-return 1;
-} // send_txt2
+} // send_txt
 
 
-int sock_buffwrite (const int connfd, struct buffer_data *out)
-{ // bm sock buffwrite
-int wlen = 0;
-int progress = 0;
-int offset = 0;
-int i;
 
-int written = sock_1writeold (connfd, out->p, out->len);
-if (written == -1)
-	return -1;
-
-if (written == out->len)
-	return written;
-
-progress = written;
-
-while (progress < out->len)
-{
-wlen = 0;
-for (i = offset; i < 500 - offset; ++i)
-{
-++wlen;
-out->p [i] = out->p [wlen + progress];
-if (i + offset == 500)
-	break;
-
-if (progress + wlen == out->len)
-       break;
-
-}// for reset op 
-int totalwrite = wlen + offset;
-
-written = sock_1writeold (connfd, out->p, totalwrite);
-if (written == -1)
-	return -1;
-
-if (written == totalwrite)
-	offset = 0;
-
-if (written < totalwrite)
-{
-offset = wlen - written;
-
-for (i = 0; i < offset; ++i)
-{
-out->p[i] = out->p[i + written];
-
-
-} // for copy offset
-
-} // if incomplete writer
-progress += wlen;
-
-
-} // while progress <
-return 1; 
-} // sock_buffwrite
 
 
 
@@ -2729,33 +2591,6 @@ ent = ent->next;
 } // while
 
 }// far clear
-
-void test ()
-{
-buffer_t temp = init_buffer (1000);
-temp.len = sprintf (temp.p, "the big fat fox ran up the road!");
-//printf ("%s\n", temp.p);
-
-struct far_builder builder = far_init (&temp);
-printf ("%s\n", builder.base);
-
-far_add (&builder, "big", "small", 5);
-
-far_add (&builder, "fox", "dog", 3);
-
-far_add (&builder, "fat", "skinny", 6);
-
-far_add (&builder, "up", "down", 4);
-
-far_add (&builder, "road", "street", 6);
-
-buffer_t page = far_build (&builder);
-printf ("[%s]\n", page.p);
-
-free (temp.p);
-exit (0);
-}
-
 
 buffer_t JSON_decode (const buffer_t in)
 {
@@ -3569,17 +3404,20 @@ len -= endtrim;
 return len;
 } // trim
 
-void save_buffer (const struct buffer_data b, const char *path)
+void save_buffer (const struct buffer_data *b, const char *path)
 { // bm save_buffer
 int localfd = open (path, O_WRONLY | O_TRUNC| O_CREAT, S_IRUSR | S_IWUSR);
 if (localfd < 0)
 	return ;
 
-write (localfd, b.p, b.len);
+write (localfd, b->p, b->len);
 
 
 close (localfd);
 }// save_page
+
+
+
 
 
 
