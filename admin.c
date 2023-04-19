@@ -922,6 +922,13 @@ request.mainbuff = &inbuff;
 request.io = io;
 //send_txt (io, "testing worked");
 
+/*
+static int count = 1;
+char nm [default_sz];
+sprintf (nm, "head/%d-head.txt", count);
+++count;
+save_buffer (&inbuff, nm);
+*/
 
 if (request.method == 'G') {
 process_get (io, request);
@@ -1466,7 +1473,7 @@ mime_txt = contpdf;
 //struct stat finfo;
 //stat (request.full_path, &finfo);
 
-outbuff.len = sprintf (outbuff.p, "%s%s%s%ld\n\n", hthead, mime_txt, contlen, request.content_len);
+outbuff.len = sprintf (outbuff.p, "%sAccept-Ranges: bytes\r\n%s%s%ld\n\n", hthead, mime_txt, contlen, request.content_len);
 
 //printf ("%ld bytes: %s", request.content_len, mime_txt);
 
@@ -1885,7 +1892,7 @@ int sock_send_file (const io_t io, const char *path)
 //return send_file2 (path, io.connfd);
 struct pollfd pfd;
 pfd.fd = io.connfd;
-pfd.events = POLLOUT;
+pfd.events = POLLOUT | POLLIN;
 
 int locfd = open (path, O_RDONLY);
 if (locfd < -1)
@@ -1915,23 +1922,39 @@ fbuff.len = read (locfd, fbuff.p, fbuff.max);
 read_progress += fbuff.len;
 
 
-int rtn = poll (&pfd, 1, timeout * 1000);
-if (rtn < 0) goto end_pnt;
+//int rtn = poll (&pfd, 1, timeout * 1000);
+//if (rtn < 0) goto end_pnt;
 
-int interim_progress = write (io.connfd, fbuff.p, fbuff.len);
-if (interim_progress == -1)
-	goto end_pnt;
+//int interim_progress = write (io.connfd, fbuff.p, fbuff.len);
+//if (interim_progress == -1)
+//	goto end_pnt;
 
-int cpylen = interim_progress;
+int cpylen = 0;
 while (cpylen < fbuff.len)
 {
 
 int rtn = poll (&pfd, 1, timeout * 1000);
 if (rtn < 0) goto end_pnt;
-interim_progress = write (io.connfd, fbuff.p + cpylen, fbuff.len - cpylen);
+
+if (pfd.revents & POLLIN)
+{
+char inbuffer [string_sz];
+struct buffer_data inbuff;
+inbuff.p = inbuffer;
+inbuff.max = (string_sz);
+
+inbuff.len = io_read1 (io, inbuff.p, inbuff.max);
+save_buffer (&inbuff, "cc.txt");
+printf ("(%d)[%.*s]\n", inbuff.len, inbuff.len, inbuff.p);
+}
+
+if (pfd.revents & POLLOUT)
+{
+int interim_progress = write (io.connfd, fbuff.p + cpylen, fbuff.len - cpylen);
 if (interim_progress == -1)
 	goto end_pnt;
 cpylen += interim_progress;
+} // IF POLLOUT
 } // while
 
 } // while loop
@@ -1950,7 +1973,7 @@ int tls_send_file (const io_t io, const char *path)
 { // bm tls sendfile
 struct pollfd pfd;
 pfd.fd = io.connfd;
-pfd.events = POLLOUT;
+pfd.events = POLLOUT | POLLIN;
 
 int locfd = open (path, O_RDONLY);
 if (locfd < -1)
@@ -1983,6 +2006,21 @@ while (interim_progress == -1)
 {
 int rtn = poll (&pfd, 1, timeout * 1000);
 if (rtn < 0) goto end_pnt;
+
+if (pfd.revents & POLLIN)
+{
+char inbuffer [string_sz];
+struct buffer_data inbuff;
+inbuff.p = inbuffer;
+inbuff.max = (string_sz);
+
+inbuff.len = io_read1 (io, inbuff.p, inbuff.max);
+save_buffer (&inbuff, "cc.txt");
+printf ("(%d)[%.*s]\n", inbuff.len, inbuff.len, inbuff.p);
+}
+
+if (pfd.revents & POLLOUT)
+{
 interim_progress = SSL_write (io.ssl, fbuff.p, fbuff.len);
 if (interim_progress == -1)
 {
@@ -2001,7 +2039,11 @@ continue;
  goto end_pnt;
 } //if ssl get err
 
-}//else printf ("%d written\n", interim_progress); // if -1
+}//else printf ("%d written\n", interim_progress); // if -1i
+}// IF PFD
+
+
+
 } // while
 
 
