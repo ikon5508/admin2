@@ -27,13 +27,10 @@
 #include <openssl/sha.h>
 // 10 mb
 #define sendfileunit 10000000 
-#define maxbuffer 100000
-#define nameholder 100
-#define string_sz 2048
-#define default_sz 128
-#define smbuff_sz 2048
-#define mdbuff_sz 10000
-#define lgbuff_sz 100000
+#define DEFAULT_SZ 128
+#define SMBUFF_SZ 2048
+#define MDBUFF_SZ 10000
+#define LGBUFF_SZ 100000
 
 #define test_mode "/test"
 #define upload_mode "/upload"
@@ -106,7 +103,7 @@ int connfd;
 
 struct string_data
 {
-char p[string_sz];
+char p[SMBUFF_SZ];
 int procint;
 int len;
 };
@@ -122,9 +119,9 @@ struct settings_data {
 int port;
 bool tls;
 int showaction; 
-char base_path [string_sz];
-char ace_builds [string_sz];
-char editor [string_sz];
+char base_path [SMBUFF_SZ];
+char ace_builds [SMBUFF_SZ];
+char editor [SMBUFF_SZ];
 }settings = {9999, true, 1, ".", ".", "aceeditor.htm"};
 
 enum emode
@@ -135,13 +132,13 @@ enum rtype
 
 struct request_data
 {
-char url [string_sz];
-char params [string_sz];
+char url [SMBUFF_SZ];
+char params [SMBUFF_SZ];
 const char *mode_text;
-char path [string_sz];
-char full_path [string_sz];
-char filename [default_sz];
-char ext [default_sz];
+char path [SMBUFF_SZ];
+char full_path [SMBUFF_SZ];
+char filename [DEFAULT_SZ];
+char ext [DEFAULT_SZ];
 unsigned long content_len;
 
 const char *mime_txt;
@@ -279,11 +276,11 @@ void configure_context(SSL_CTX *ctx)
 int get_action (const struct request_data request)
 {
 // bm getaction    
-    char outb [maxbuffer];
+    char outb [LGBUFF_SZ];
 struct buffer_data out;
 out.p = outb;
 out.len = 0;
-out.max = maxbuffer;
+out.max = LGBUFF_SZ;
 
 int showedit = 0;
 enum eviewtype
@@ -389,19 +386,19 @@ if (localfd == -1)
 
 //struct string_data txtdata;
 struct buffer_data in;
-char indata [maxbuffer];
-char outdata [maxbuffer];
+char indata [LGBUFF_SZ];
+char outdata [LGBUFF_SZ];
 struct buffer_data pout;
 in.p = indata;
 pout.p = outdata;
 pout.len = 0;
 
-in.len = read (localfd, in.p, maxbuffer);
+in.len = read (localfd, in.p, LGBUFF_SZ);
 close (localfd);
 
 for (int i = 0; i < in.len; ++i)
 {
-if (pout.len > maxbuffer - 8)
+if (pout.len > LGBUFF_SZ - 8)
 break;
 
 if (in.p[i] == '\n')
@@ -457,8 +454,8 @@ return 1;
 
 int send_mredirect (const int fd, const char *msg, const char *uri)
 { // bm send m-redirect
-char outbuff [string_sz];
-char head [string_sz];
+char outbuff [SMBUFF_SZ];
+char head [SMBUFF_SZ];
 
 int doclen = sprintf (outbuff, "<html><body><script>window.alert(\"%s\"); window.location=\"%s\";</script></body></html>", msg, uri);
 
@@ -474,8 +471,8 @@ return 1;
 
 int send_redirect (const int fd, const char *uri)
 { // bm send redirect
-char outbuff [string_sz];
-char head [string_sz];
+char outbuff [SMBUFF_SZ];
+char head [SMBUFF_SZ];
 
 int doclen = sprintf (outbuff, "<html><body><script>window.location=\"%s\";</script></body></html>", uri);
 
@@ -530,7 +527,7 @@ int d2 = getnext (request.mainbuff->p, 10, d1, request.mainbuff->len);
 if (d2 == -1) return 0;
 printf ("d1: %d, d2: %d\n", d1, d2);
 
-char client_key [default_sz];
+char client_key [DEFAULT_SZ];
 //int key_len = midstr (request.mainbuff->p, client_key, d1, d2);
 int key_len = d2 - d1;
 memcpy (client_key, request.mainbuff->p + d1, key_len);
@@ -549,7 +546,7 @@ const char *response = "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r
 
 char *append = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
 
-char tosha [string_sz];
+char tosha [SMBUFF_SZ];
 sprintf (tosha, "%s%s", client_key, append);
 
 unsigned char *utosha = (unsigned char *) tosha;
@@ -577,11 +574,11 @@ if (a != len)
 
 //printf ("[%.*s] done\n", len, handshake);
 //
-buffer_t inbuff = init_buffer (string_sz);
-inbuff.len = io_read1 (request.io, inbuff.p, string_sz);
+buffer_t inbuff = init_buffer (SMBUFF_SZ);
+inbuff.len = io_read1 (request.io, inbuff.p, SMBUFF_SZ);
 printf ("(%d)%.*s\n", inbuff.len, inbuff.len, inbuff.p);
 
-//inbuff.len = io_read1 (request.io, inbuff.p, string_sz);
+//inbuff.len = io_read1 (request.io, inbuff.p, SMBUFF_SZ);
 //printf ("(%d)%.*s\n", inbuff.len, inbuff.len, inbuff.p);
 //int localfd = open (request.full_path, O_WRONLY | O_TRUNC| O_CREAT, S_IRUSR | S_IWUSR);
 int loc = open ("frame.bin",  O_WRONLY | O_TRUNC| O_CREAT, S_IRUSR | S_IWUSR);
@@ -682,7 +679,7 @@ close(pipefd[0]);    // close reading end in the child
 dup2(pipefd[1], 1);  // send stdout to the pipe
 dup2(pipefd[1], 2);  // send stderr to the pipe
 
-char dirpath [smbuff_sz];
+char dirpath [SMBUFF_SZ];
 int rtn = getlast (request.full_path, (int) '/', strlen(request.full_path));
 if (rtn == -1) killme ("unexpected occurence");
 printf ("rtn %d\n", rtn);
@@ -696,11 +693,11 @@ return 0;
 }else{
 printf ("hello from parent\n");
     // parent
-char buffer[smbuff_sz];
-char cres [mdbuff_sz];
+char buffer[SMBUFF_SZ];
+char cres [MDBUFF_SZ];
 buffer_t res;
 res.p = cres;
-res.max = mdbuff_sz;
+res.max = MDBUFF_SZ;
 res.len = 0;
 
 close(pipefd[1]);  // close the write end of the pipe in the parent
@@ -715,7 +712,7 @@ printf ("poll wait (run make) ... ");
 int events = poll (&pll, 1, 5000);
 printf ("events %d\n", events);
 if (events <= 0) {printf ("no events\n"); break;}
-int len = read (pipefd[0], buffer, smbuff_sz);
+int len = read (pipefd[0], buffer, SMBUFF_SZ);
 if (len == 0) break;
 buffer[len] = 0;
 //printf ("(%d) len %d, %.*s\n", i, len, len, buffer);
@@ -818,10 +815,10 @@ return -1;
 
 int process_connection (const int thread_id, const int connfd)
 {
-char inbuffer [string_sz];
+char inbuffer [SMBUFF_SZ];
 struct buffer_data inbuff;
 inbuff.p = inbuffer;
-inbuff.max = (string_sz);
+inbuff.max = (SMBUFF_SZ);
 
 
 io_t io;
@@ -925,10 +922,10 @@ else printf ("tls off\n");
 
 printf ("admin load\nPort: %d\nPath: %s\nEditor: %s\n", settings.port, settings.base_path, settings.editor);
 
-char inbuffer [string_sz];
+char inbuffer [SMBUFF_SZ];
 struct buffer_data inbuff;
 inbuff.p = inbuffer;
-inbuff.max = (string_sz);
+inbuff.max = (SMBUFF_SZ);
 
 if (THREAD_POOL_SIZE) {
 for (int i = 0; i < THREAD_POOL_SIZE; i++) {
@@ -984,50 +981,87 @@ process_connection (-1, connfd);
 //
 } // main
 
-int post_file (const struct request_data req)
-{ // bm post_file
-
-struct nfo {
-char name [default_sz];
-unsigned long sz;
-};
-int file_count = 0;
-
-buffer_t inbuff;
-char inb [maxbuffer];
-inbuff.p = inb;
-inbuff.max = maxbuffer;
-inbuff.len = 0;
-
-//get boundary
-char *p1 = memmem (req.mainbuff->p, req.mainbuff->len, "boundary=", 9);
-if (p1 == NULL) return 0;
-int d1 = p1 - req.mainbuff->p + 9;
-
-
-char *p2 = memchr (req.mainbuff->p + d1, 10, req.mainbuff->len);
-if (p2 == NULL) return 0;
-int d2 = p2 - req.mainbuff->p;
-
-char boundary [default_sz];
-int boundary_len = d2 - d1;
-memset (boundary, 0, default_sz);
-memcpy (boundary, req.mainbuff->p + d1, boundary_len);
-boundary [boundary_len] = 0;
-boundary_len = trim (boundary);
-
-//save_buffer (req.mainbuff, "post.txt");
-//printf ("%d %d [%s]\n", d1, d2, boundary);
-
-// check for content in 1st xmission (firefox)
-p1 = memmem (req.mainbuff->p + d2, req.mainbuff->len - d2, boundary, boundary_len);
-if (p1 != NULL)
+buffer_t init_stack (char *b, const int sz)
 {
-d1 = p1 - req.mainbuff->p;
-
-
+buffer_t rtn;
+rtn.max = sz;
+rtn.p = b;
+rtn.len = 0;
+return rtn;
 }
 
+int parse_boundary (const buffer_t *mainbuff, buffer_t *boundary)
+{
+//get boundary
+char *p1 = memmem (mainbuff->p, mainbuff->len, "boundary=", 9);
+if (p1 == NULL) return -1;
+int d1 = p1 - mainbuff->p + 9;
+
+
+char *p2 = memchr (mainbuff->p + d1, 10, mainbuff->len);
+if (p2 == NULL) return -1;
+int d2 = p2 - mainbuff->p;
+
+boundary->len = d2 - d1;
+if (boundary->len > boundary->max) return -1;
+memset (boundary->p, 0, boundary->max);
+memcpy (boundary->p, mainbuff->p + d1, boundary->len);
+boundary->p [boundary->len] = 0;
+boundary->len = trim (boundary->p);
+
+//save_buffer (mainbuff, "post.txt");
+//printf ("head [%s]\n", boundary);
+
+// check for content in 1st xmission (firefox)
+p1 = memmem (mainbuff->p + d2, mainbuff->len - d2, boundary->p, boundary->len);
+if (p1 != NULL)
+{
+d1 = p1 - mainbuff->p;
+
+//d2 = mainbuff->len - d1;
+return d1;
+//save_buffer (&inbuff, "boundary.txt");
+//printf ("boundary, done firefox\n"); 
+}
+return 0;
+} // parse boundary
+
+int post_file (const struct request_data req)
+{ // bm post_file
+struct nfo {
+char name [DEFAULT_SZ];
+unsigned long sz;
+};
+
+char inb [LGBUFF_SZ];
+buffer_t inbuff = init_stack (inb, LGBUFF_SZ);
+memset (inbuff.p, 0, inbuff.max);
+
+char bichar [DEFAULT_SZ];
+buffer_t boundary = init_stack (bichar, DEFAULT_SZ);
+
+int offset = parse_boundary (req.mainbuff, &boundary);
+
+printf ("offset %d\n", offset);
+if (offset == -1) return 0;
+
+
+if (offset)
+{
+inbuff.len = req.mainbuff->len - offset;
+if (inbuff.len > inbuff.max) return 0;
+memcpy (inbuff.p, req.mainbuff->p + offset, inbuff.len);
+save_buffer (&inbuff, "post.txt");
+//printf ("firefox started in 1st xmission\n");
+//exit (0);
+}
+
+// need to loop read,and process nfo
+for (int i = 0; i < 10; ++i)
+//while (1)
+{
+
+} // reader loop
 
 /*
 p1 = memmem (req.mainbuff->p, req.mainbuff->len, "/nfo", 4);
@@ -1041,12 +1075,11 @@ return 0;
 d2 = p2 - req.mainbuff->p;
 
 
-unsigned long read_amount = (maxbuffer > req.content_len)?maxbuffer:req.content_len;
+unsigned long read_amount = (LGBUFF_SZ > req.content_len)?LGBUFF_SZ:req.content_len;
 
 
 
 */
-
 send_txt (req.io, "post file");
 printf (" ////post file ///// \n");
 return 1;
@@ -1073,7 +1106,7 @@ close (dirfd);
 DIR *dp;
 struct dirent *ep;
 
-buffer_t dir_list = init_buffer (lgbuff_sz);
+buffer_t dir_list = init_buffer (LGBUFF_SZ);
 
 dp = opendir (request.full_path);
 if (dp == NULL)
@@ -1122,7 +1155,7 @@ buffcatf (&dir_list, "<a href=\"/%s/%s\">%s</a><br>\n", request.path, ep->d_name
 //<!--linklist-->
 
 buffer_t bdp;
-char cdp [smbuff_sz];
+char cdp [SMBUFF_SZ];
 strcpy (cdp, request.path);
 bdp.p = cdp;
 bdp.len = strlen (request.path);
@@ -1243,7 +1276,7 @@ request->mode = root;
 
 request->fd = fd;
 
-const int url_len = extract_CC (inbuff, request->url, smbuff_sz, ' ', ' ');
+const int url_len = extract_CC (inbuff, request->url, SMBUFF_SZ, ' ', ' ');
 if (url_len == 0) return 0;
 
 //printf ("URL found: [%s]\n", request->url);
@@ -1313,7 +1346,7 @@ base_path = settings.ace_builds;
 } // if ace_builds
 
 
-char encoded_url [smbuff_sz];
+char encoded_url [SMBUFF_SZ];
 int path_len = path_end - path_start;
 memcpy (encoded_url, request->url + path_start, path_len);
 encoded_url [path_len] = 0;
@@ -1343,7 +1376,7 @@ request->ext [path_len - rtn] = 0;
 // populate content len for get file
 // if POST request populate content len
 
-snprintf (request->full_path, default_sz, "%s%s", base_path, request->path);
+snprintf (request->full_path, DEFAULT_SZ, "%s%s", base_path, request->path);
 if (request->method == 'G')
 {
 struct stat finfo;
@@ -1395,7 +1428,7 @@ buffer_t filedata;
 
 {
 struct stat finfo;
-char editor_path [smbuff_sz];
+char editor_path [SMBUFF_SZ];
 sprintf (editor_path, "internal/%s", settings.editor);
 if (stat (editor_path, &finfo)) {send_txt (request.io, "cant stat Editor"); return 0;}
 editor = init_buffer (finfo.st_size);
@@ -1416,14 +1449,14 @@ close (file_fd);
 
 
 // process bookmarks
-buffer_t bookmarks = init_buffer (mdbuff_sz);
+buffer_t bookmarks = init_buffer (MDBUFF_SZ);
 int linecount = 0;
 char *feed = filedata.p;
 buffcatf (&bookmarks, "<select class=\"button\" onchange=\"bookmark(event)\">\n");
 const int bmlen = strlen (BOOKMARK);
 while (1)
 {
-char line [smbuff_sz];
+char line [SMBUFF_SZ];
 ++linecount;
 feed = parse_line (line, feed);
 if (feed == NULL) break;
@@ -1432,8 +1465,8 @@ char *ret = strstr (line, BOOKMARK);
 if (ret != NULL)
 {
 int offset = ret - line;
-char bm [default_sz];
-int len = strnlen (line, default_sz);
+char bm [DEFAULT_SZ];
+int len = strnlen (line, DEFAULT_SZ);
 memcpy (bm, line + offset + bmlen, len - offset - bmlen);
 bm [len - offset - bmlen] = 0;
 
@@ -1505,7 +1538,7 @@ printf ("reader count: %d\n", count);
 
 encoded.len = io_read (request.io, encoded.p, encoded.len, encoded.max);
 
-char backup [string_sz];
+char backup [SMBUFF_SZ];
 strcpy (backup, "old/");
 strcat (backup, "%H:%M-");
 strcat (backup, request.filename);
@@ -1517,7 +1550,7 @@ struct tm *tmp;
 t = time(NULL); 
 tmp = localtime(&t);
 if (tmp == NULL) { perror("localtime"); exit(EXIT_FAILURE); } 
-char outstr [string_sz];
+char outstr [SMBUFF_SZ];
 if (strftime(outstr, sizeof(outstr), backup, tmp) == 0) 
 { fprintf(stderr, "strftime returnd 0"); exit(EXIT_FAILURE); } 
 printf ("backup name [%s]\n", outstr);
@@ -1595,15 +1628,15 @@ return 1;
 int send_txt (const io_t io, const char *txt)
 { // bm send_txt
 
-int len = strnlen (txt, maxbuffer);
+int len = strnlen (txt, LGBUFF_SZ);
 
-char outbuffer [maxbuffer];
+char outbuffer [LGBUFF_SZ];
 struct buffer_data outbuff;
 outbuff.p = outbuffer;
 outbuff.len = 0;
-outbuff.max = maxbuffer;
+outbuff.max = LGBUFF_SZ;
 
-outbuff.len = snprintf (outbuff.p, maxbuffer, "%s%s%s%s%d\n\n%.*s", hthead, conttxt, connclose, contlen, len, len, txt);
+outbuff.len = snprintf (outbuff.p, LGBUFF_SZ, "%s%s%s%s%d\n\n%.*s", hthead, conttxt, connclose, contlen, len, len, txt);
 
 io_write (io, outbuff.p, outbuff.len);
 
@@ -1668,10 +1701,10 @@ if (rtn < 0) goto end_pnt;
 
 if (pfd.revents & POLLIN)
 {
-char inbuffer [string_sz];
+char inbuffer [SMBUFF_SZ];
 struct buffer_data inbuff;
 inbuff.p = inbuffer;
-inbuff.max = (string_sz);
+inbuff.max = (SMBUFF_SZ);
 
 inbuff.len = io_read1 (io, inbuff.p, inbuff.max);
 save_buffer (&inbuff, "cc.txt");
@@ -1739,10 +1772,10 @@ if (rtn < 0) goto end_pnt;
 
 if (pfd.revents & POLLIN)
 {
-char inbuffer [string_sz];
+char inbuffer [SMBUFF_SZ];
 struct buffer_data inbuff;
 inbuff.p = inbuffer;
-inbuff.max = (string_sz);
+inbuff.max = (SMBUFF_SZ);
 
 inbuff.len = io_read1 (io, inbuff.p, inbuff.max);
 save_buffer (&inbuff, "cc.txt");
@@ -1893,7 +1926,8 @@ if (prtn < 1) return -1;
 return write (connfd, buffer, size);
 
 } // sock_writeold_old
-
+/*
+ 
 int sock_readold (const int connfd, void *buffer, const int size)
 { // bm sock readold
 struct pollfd ev;
@@ -1966,6 +2000,7 @@ progress += wlen;
 } // while progress <
 return 1; 
 } // sock_buffwrite
+*/
 
 int tls_read1 (const io_t io, char *buffer, const int max)
 { // bm tls_read1
@@ -2382,8 +2417,8 @@ req_len -= 1;
 break;
 default:
 printf ("unhandled escape delimeter char: [%d]%c\n", d1, dchar);
-char temp [smbuff_sz];
-memset (temp, 0, default_sz);
+char temp [SMBUFF_SZ];
+memset (temp, 0, DEFAULT_SZ);
 memcpy (temp, in.p + d1 - 80,160);
 printf ("samp [%s]\n", temp);
 exit (0);
@@ -2478,8 +2513,8 @@ printf ("len is 0last dchar %d[%c]\n", inst[inst_count -1].dchar, inst[inst_coun
 //printf ("len: %d ...last char: %d[%c]\n", out.len, out.p[out.len], out.p[out.len]);
 
 /*
-char temp [default_sz];
-memset (temp, 0, default_sz);
+char temp [DEFAULT_SZ];
+memset (temp, 0, DEFAULT_SZ);
 memcpy (temp, in.p + tail +1, len);
 printf ("adding [%s]\n", temp);
 exit (0);
@@ -2803,7 +2838,7 @@ va_start (ap, format);
 int formatlen = strlen (format);
 //char type;
 //int specify_len = 0;
-//char entry [lgbuff_sz] = "";
+//char entry [LGBUFF_SZ] = "";
 
 int len = 0;
 int d;
