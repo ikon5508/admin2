@@ -48,7 +48,7 @@ const int ace_builds_mode_len = strlen (ace_builds_mode);
 const int config_mode_len = strlen (config_mode);
 const int websock_mode_len = strlen (websock_mode);
 
-#define THREAD_POOL_SIZE 10
+#define THREAD_POOL_SIZE 0
 pthread_t thread_pool[THREAD_POOL_SIZE];
 pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_cond_t condition_var = PTHREAD_COND_INITIALIZER;
@@ -1026,41 +1026,74 @@ return d1;
 return 0;
 } // parse boundary
 
-int post_file (const struct request_data req)
-{ // bm post_file
-struct nfo {
+
+
+struct fnfo {
 char name [DEFAULT_SZ];
 unsigned long sz;
 };
 
-char inb [LGBUFF_SZ];
-buffer_t inbuff = init_stack (inb, LGBUFF_SZ);
+int procfinfo (struct fnfo *nfo, const buffer_t *b)
+{
+nfo = (struct fnfo *) malloc (sizeof (struct fnfo));
+
+snprintf (nfo->name, DEFAULT_SZ, "%s", b->p);
+
+return -1;
+}// procfinfo
+
+int post_file (const struct request_data req)
+{ // bm post_file
+
+unsigned long content_prog = 0;
+
+// max read 1 mb
+const int MAX_READ = 1000000;
+
+buffer_t inbuff = init_buffer (MAX_READ);
 memset (inbuff.p, 0, inbuff.max);
 
 char bichar [DEFAULT_SZ];
 buffer_t boundary = init_stack (bichar, DEFAULT_SZ);
 
 int offset = parse_boundary (req.mainbuff, &boundary);
-
-printf ("offset %d\n", offset);
+//printf ("offset %d\n", offset);
 if (offset == -1) return 0;
 
+unsigned long content_rem = req.content_len - content_prog;
+int read_req = (MAX_READ>content_rem)?MAX_READ:content_rem;
+bool nfo_done = false;
 
 if (offset)
 {
 inbuff.len = req.mainbuff->len - offset;
 if (inbuff.len > inbuff.max) return 0;
 memcpy (inbuff.p, req.mainbuff->p + offset, inbuff.len);
-save_buffer (&inbuff, "post.txt");
-//printf ("firefox started in 1st xmission\n");
+//save_buffer (&inbuff, "post.txt");
+content_prog = offset;
+read_req -= offset;
+printf ("firefox started in 1st xmission\n");
 //exit (0);
 }
+
+struct fnfo *nfo;
+int file_count = 0;
 
 // need to loop read,and process nfo
 for (int i = 0; i < 10; ++i)
 //while (1)
 {
 
+printf ("content len: %lu, read_req: %d  \n", req.content_len, read_req);
+
+//int read_len = io_read (req.io, inbuff.p, inbuff.len, read_req);
+inbuff.len = io_read (req.io, inbuff.p, inbuff.len, read_req);
+if (inbuff.len != read_req) killme ("no ==");
+
+if (nfo_done == false)
+{
+}// if nfo
+	
 } // reader loop
 
 /*
@@ -1080,6 +1113,7 @@ unsigned long read_amount = (LGBUFF_SZ > req.content_len)?LGBUFF_SZ:req.content_
 
 
 */
+free (inbuff.p);
 send_txt (req.io, "post file");
 printf (" ////post file ///// \n");
 return 1;
@@ -1909,7 +1943,7 @@ printf ("Connection closed by client\n");
 close(fd);
 } // softclose
 
-
+/*
 int sock_1writeold (const int connfd, const char *buffer, int size)
 { // bm sock 1writeold
 
@@ -1926,6 +1960,7 @@ if (prtn < 1) return -1;
 return write (connfd, buffer, size);
 
 } // sock_writeold_old
+*/
 /*
  
 int sock_readold (const int connfd, void *buffer, const int size)
