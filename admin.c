@@ -211,7 +211,7 @@ int send_ftxt (const int fd, const char *format, ...);
 int serv_dir (const struct request_data request);
 int serv_file (const struct request_data request);
 int get_file (const struct settings_data settings, const struct request_data request);
-int  post_file (const struct request_data);
+int post_file (const struct request_data);
 int parse_request (struct request_data *request, const int fd, const struct buffer_data inbuff);
 int post_edit (const struct request_data request);
 int get_edit (const struct request_data request);
@@ -1045,13 +1045,13 @@ return -1;
 int post_file (const struct request_data req)
 { // bm post_file
 
-unsigned long content_prog = 0;
 
 // max read 1 mb
 const int MAX_READ = 1000000;
 
 buffer_t inbuff = init_buffer (MAX_READ);
 memset (inbuff.p, 0, inbuff.max);
+
 
 char bichar [DEFAULT_SZ];
 buffer_t boundary = init_stack (bichar, DEFAULT_SZ);
@@ -1060,9 +1060,21 @@ int offset = parse_boundary (req.mainbuff, &boundary);
 //printf ("offset %d\n", offset);
 if (offset == -1) return 0;
 
-unsigned long content_rem = req.content_len - content_prog;
-int read_req = (MAX_READ>content_rem)?MAX_READ:content_rem;
+unsigned long content_prog = 0;
+unsigned long content_rem = req.content_len;
+int read_req = (MAX_READ<content_rem)?MAX_READ:content_rem;
+
 bool nfo_done = false;
+int nfo_offset = 0;
+char nfo [SMBUFF_SZ];
+int nfo_len;
+
+int file_count;
+int file_index = 0;
+char file_name [DEFAULT_SZ];
+unsigned long file_sz;
+unsigned long file_prog;
+bool file_active = false;
 
 if (offset)
 {
@@ -1076,24 +1088,54 @@ printf ("firefox started in 1st xmission\n");
 //exit (0);
 }
 
-struct fnfo *nfo;
-int file_count = 0;
-
+printf ("content len: %lu, read_req: %d  \n", req.content_len, read_req);
 // need to loop read,and process nfo
 for (int i = 0; i < 10; ++i)
 //while (1)
 {
-
-printf ("content len: %lu, read_req: %d  \n", req.content_len, read_req);
-
-//int read_len = io_read (req.io, inbuff.p, inbuff.len, read_req);
 inbuff.len = io_read (req.io, inbuff.p, inbuff.len, read_req);
+int inbuff_prog = 0;
 if (inbuff.len != read_req) killme ("no ==");
 
 if (nfo_done == false)
 {
+char *p1 = memmem (inbuff.p, inbuff.len, "nfo", 3);
+if (p1 == NULL) killme ("memmem 1096");
+int d1 = p1 - inbuff.p;
+char *p2 = memmem (inbuff.p + d1+1, inbuff.len  - d1-1, "nfo", 3);
+if (p1 == NULL) killme ("memmem 1101");
+int d2 = p2 - inbuff.p;
+content_prog = d2;
+nfo_len = d2 - d1;
+if (nfo_len > SMBUFF_SZ)killme ("buffer overflow");
+memcpy (nfo, inbuff.p + d1, nfo_len);
+nfo [nfo_len] = 0;
+//printf ("nfo: %s\n", nfo);
+p1 = memchr (nfo, (int) '/', nfo_len);
+if (p1 == NULL) killme ("memxhr 1112");
+d1 = p1 - nfo;
+p2 = memchr (nfo + d1+1, (int) '/', nfo_len - d1-1);
+if (p2 == NULL) killme ("memxhr 1116");
+d2 = p2 - nfo;
+char sfc[10];
+if ((d2-d1) > 10) killme ("buffer overflow 1120");
+memcpy (sfc, nfo+d1+1, d2-d1-1);
+sfc [d2-d1] = 0;
+//printf ("%d-%d, sfc %s\n", d1, d2, sfc);
+file_count = atol (sfc);
+nfo_done = true;
+inbuff_prog = d2;
 }// if nfo
-	
+
+if (file_active == false)
+{
+
+} // if file A
+
+
+
+content_rem -= inbuff.len;	
+if (content_rem == 0) break;
 } // reader loop
 
 /*
