@@ -994,20 +994,22 @@ int parse_boundary (const buffer_t *mainbuff, buffer_t *boundary)
 {
 //get boundary
 bool noboundary = false;
+buffer_t intbuff;
+if (boundary == NULL)
+{intbuff=init_buffer(DEFAULT_SZ);boundary=&intbuff;noboundary=true;}
+
 int rtn = 0;
 char *p1 = memmem (mainbuff->p, mainbuff->len, "boundary=", 9);
-if (p1 == NULL) return -1;
+if (p1 == NULL) goto end_point;
 int d1 = p1 - mainbuff->p + 9;
 
-if (boundary == NULL)
-{boundary=init_buffer(DEFAULT_SZ); noboundary=true}
 
 char *p2 = memchr (mainbuff->p + d1, 10, mainbuff->len);
-if (p2 == NULL) return -1;
+if (p2 == NULL) goto end_point;
 int d2 = p2 - mainbuff->p;
 
 boundary->len = d2 - d1;
-if (boundary->len > boundary->max) return -1;
+if (boundary->len > boundary->max) goto end_point;
 memset (boundary->p, 0, boundary->max);
 memcpy (boundary->p, mainbuff->p + d1, boundary->len);
 boundary->p [boundary->len] = 0;
@@ -1023,60 +1025,65 @@ if (p1 != NULL)
 d1 = p1 - mainbuff->p;
 
 //d2 = mainbuff->len - d1;
-return d1;
+rtn = d1;
 //save_buffer (&inbuff, "boundary.txt");
 //printf ("boundary, done firefox\n"); 
 }
-
-return 0;
+end_point:;
+if (noboundary == true) free (intbuff.p);
+return rtn;
 } // parse boundary
 
 struct pfinfo {
 const char *base_path;
 int inbuff_prog;
+
 int fd;
+unsigned long file_sz;
+unsigned long file_prog;
+
 int nfo_prog;
 int nfo_len;
-const char *nfo;
+char nfo [SMBUFF_SZ];
 }; // struct
 
-int process_filebuffer (const buffer_t *buff, struct pfinfo *info)
+int process_filebuffer (const buffer_t *inbuff, struct pfinfo *info)
 {
 for (int x = 0; x < 10; ++x)
 //while  (1)
 {
-if (info->fd != 0)
+if (info->fd == 0)
 {// pure nfo usage
 char full_path [SMBUFF_SZ];
 char file_name [DEFAULT_SZ];
-char *p1 = memchr (info->nfo+nfo_prog+1, (int) '/', info->nfo_len-info->nfo_prog-1);
-if (p1 == NULL) break;
-int d1 = p1 - nfo;
+char sfs[10];
+
+char *p1 = memchr (info->nfo+info->nfo_prog+1, (int) '/', info->nfo_len-info->nfo_prog-1);
+if (p1 == NULL) killme ("err 1060");
+int d1 = p1 - info->nfo;
 
 char *p2 = memchr (info->nfo+d1+1, (int) '/', info->nfo_len-d1-1);
-if (p2 == NULL) break;
-int d2 = p2 - nfo;
+if (p2 == NULL) killme ("err 1064");
+int d2 = p2 - info->nfo;
 
-char sfs[10];
-memcpy (file_name, nfo+nfo_prog+1, d1-nfo_prog-1);
-file_name [d1-nfo_prog] = 0;
+memcpy (file_name, info->nfo+nfo_prog+1, d1-info->nfo_prog-1);
+file_name [d2] = 0;
 
-memcpy (sfs, nfo+d1+1, d2-d1-1);
+memcpy (sfs, info->nfo+d1+1, d2-d1-1);
 sfs [d2-d1] = 0;
 file_sz = atol (sfs);
-file_rem = file_sz;
 //printf ("%d fname: [%s]\n", i, file_name);
 printf ("%d fname: %s, sfs: %s\n", i, file_name, sfs);
 
-snprintf (full_path, SMBUFF_SZ, "%s/%s", info.full_path, file_name);
+snprintf (full_path, SMBUFF_SZ, "%s/%s", info->base_path, file_name);
 printf ("[%s]\n", full_path);
 
 fd = open (full_path, O_WRONLY | O_TRUNC| O_CREAT, S_IRUSR | S_IWUSR);
 if (fd == -1) {printf ("err%d\n", errno);  killme ("error 1141");}
-nfo_prog = d2;
+info->nfo_prog = d2;
 } // if file A
-
-if (calibrated == false)
+/*
+if (info->calibrated == false)
 {
 //write (fd, inbuff.p+inbuff_prog, inbuff.len-inbuff_prog);
 
@@ -1094,7 +1101,7 @@ inbuff_prog = d1 + 3;
 
 //write (fd, inbuff.p+d1, inbuff.len-d1);
 //close (fd);
-calibrated = true;
+info->calibrated = true;
 } // if calibrated
 
 
@@ -1103,10 +1110,10 @@ if (inbuff_rem > file_rem)
 {
 write (fd, inbuff.p+info->inbuff_prog, file_rem);
 close (fd);
-calibrated = false;
-file_active = false;
-++file_index;
-inbuff_prog += file_rem;
+info->calibrated = false;
+info->file_active = false;
+
+
 printf ("index %d, count %d\n", file_index, file_count);
 if (file_index == file_count) break;
 }else{
@@ -1118,9 +1125,28 @@ break;
 
 } // inbuff loop
 // inbuff control loop
-
+*/
 return 1;
 } // process filebuffer
+
+int process_filenfo (const buffer_t *inbuff, struct pfinfo *info){// bm process filenfo
+int rtn = 0;
+
+char *p1 = memmem (inbuff->p, inbuff->len, "nfo", 3);
+if (p1 == NULL) killme ("memmem 1096");
+int d1 = p1 - inbuff->p;
+char *p2 = memmem (inbuff->p + d1+1, inbuff->len  - d1-1, "nfo", 3);
+if (p1 == NULL) killme ("memmem 1101");
+int d2 = p2 - inbuff->p;
+rtn = d2;
+info->nfo_len = d2 - d1;
+if (info->nfo_len > SMBUFF_SZ)killme ("buffer overflow");
+memcpy (info->nfo, inbuff->p + d1, info->nfo_len);
+info->nfo [info->nfo_len] = 0;
+//printf ("nfo: %s\n",info->nfo);
+end_point:;
+return rtn;
+} // process file nfo
 
 int post_file (const struct request_data req)
 { // bm post_file
@@ -1135,21 +1161,16 @@ int read_req = (MAX_READ<req.content_len)?MAX_READ:req.content_len;
 buffer_t inbuff = init_buffer (read_req);
 memset (inbuff.p, 0, inbuff.max);
 
-char bichar [DEFAULT_SZ];
-buffer_t boundary = init_stack (bichar, DEFAULT_SZ);
-int offset = parse_boundary (req.mainbuff, &boundary);
+//char bichar [DEFAULT_SZ];
+//buffer_t boundary = init_stack (bichar, DEFAULT_SZ);
+//int offset = parse_boundary (req.mainbuff, &boundary);
+int offset = parse_boundary (req.mainbuff, NULL);
 //printf ("offset %d\n", offset);
 if (offset == -1) return 0;
 
 
 bool nfo_done = false;
-int nfo_prog = 0;
-char nfo [SMBUFF_SZ];
-int nfo_len;
 
-int fd;
-int file_count;
-int file_index = 0;
 /*
 struct pfinfo {
 const char *base_path;
@@ -1157,11 +1178,10 @@ int inbuff_prog;
 int fd;
 int nfo_prog;
 int nfo_len;
-const char *nfo;
+char nfo SMBUFF_SZ;
 }; // struct
 */
 
-struct pfinfo info;
 
 if (offset)
 {
@@ -1174,53 +1194,28 @@ content_prog = offset;
 printf ("firefox started in 1st xmission\n");
 //exit (0);
 }
-
 printf ("content len: %lu, read_req: %d  \n", req.content_len, read_req);
+
+struct pfinfo info;
+memset (&info, 0, sizeof (struct pfinfo));
+info.base_path = req.full_path;
 
 // read loop
 for (int i = 0; i < 10; ++i)
 //while (1)
 {
+if (read_req > 0)  
 inbuff.len = io_read (req.io, inbuff.p, inbuff.len, read_req);
-else read_req = inbuff.len;
-if (inbuff.len != read_req) killme ("no ==");
+
+if (inbuff.len!=read_req && read_req>0) killme ("no ==");
 
 if (nfo_done == false)
-{
-char *p1 = memmem (inbuff.p, inbuff.len, "nfo", 3);
-if (p1 == NULL) killme ("memmem 1096");
-int d1 = p1 - inbuff.p;
-char *p2 = memmem (inbuff.p + d1+1, inbuff.len  - d1-1, "nfo", 3);
-if (p1 == NULL) killme ("memmem 1101");
-int d2 = p2 - inbuff.p;
-info.inbuff_prog = d2;
-info.nfo_len = d2 - d1;
-if (nfo_len > SMBUFF_SZ)killme ("buffer overflow");
-memcpy (nfo, inbuff.p + d1, nfo_len);
-nfo [nfo_len] = 0;
-printf ("nfo: %s\n", nfo);
-p1 = memchr (nfo, (int) '/', nfo_len);
-if (p1 == NULL) killme ("memxhr 1112");
-d1 = p1 - nfo;
-p2 = memchr (nfo + d1+1, (int) '/', nfo_len - d1-1);
-if (p2 == NULL) killme ("memxhr 1116");
-d2 = p2 - nfo;
-nfo_prog = d2;
-char sfc[10];
-if ((d2-d1) > 10) killme ("buffer overflow 1120");
-memcpy (sfc, nfo+d1+1, d2-d1-1);
-sfc [d2-d1] = 0;
-//printf ("%d-%d, sfc %s\n", d1, d2, sfc);
-file_count = atol (sfc);
-nfo_done = true;
+{info.inbuff_prog=process_filenfo (&inbuff, &info);nfo_done=true;
+printf ("nfo: %s\n", info.nfo);
+}
+// if nfo
 
 
-
-}// if nfo
-
-
-// inbuff control loop
-if (content_rem == 0) break;
 } // reader loop
 
 
