@@ -1047,6 +1047,27 @@ int nfo_len;
 char nfo [SMBUFF_SZ];
 }; // struct
 
+int process_filenfo (const buffer_t *inbuff, struct pfinfo *info)
+{// bm process filenfo
+int rtn = 0;
+
+char *p1 = memmem (inbuff->p, inbuff->len, "nfo", 3);
+if (p1 == NULL) killme ("memmem 1096");
+int d1 = p1 - inbuff->p;
+char *p2 = memmem (inbuff->p + d1+1, inbuff->len  - d1-1, "nfo", 3);
+if (p1 == NULL) killme ("memmem 1101");
+int d2 = p2 - inbuff->p;
+rtn = d2;
+info->nfo_len = d2 - d1;
+if (info->nfo_len > SMBUFF_SZ)killme ("buffer overflow");
+memcpy (info->nfo, inbuff->p + d1-1, info->nfo_len);
+info->nfo [info->nfo_len] = 0;
+printf ("nfo: [%s]\n",info->nfo);
+end_point:;
+return rtn;
+} // process file nfo
+
+
 int process_filebuffer (const buffer_t *inbuff, struct pfinfo *info)
 {
 for (int x = 0; x < 10; ++x)
@@ -1066,22 +1087,31 @@ char *p2 = memchr (info->nfo+d1+1, (int) '/', info->nfo_len-d1-1);
 if (p2 == NULL) killme ("err 1064");
 int d2 = p2 - info->nfo;
 
-memcpy (file_name, info->nfo+nfo_prog+1, d1-info->nfo_prog-1);
+memcpy (file_name, info->nfo+info->nfo_prog+1, d1-info->nfo_prog-1);
 file_name [d2] = 0;
+
+printf ("%d fname:%d-%d [%s]\n", x, d1, d2, file_name);
+
+return 1;
 
 memcpy (sfs, info->nfo+d1+1, d2-d1-1);
 sfs [d2-d1] = 0;
-file_sz = atol (sfs);
-//printf ("%d fname: [%s]\n", i, file_name);
-printf ("%d fname: %s, sfs: %s\n", i, file_name, sfs);
+info->file_sz = atol (sfs);
+printf ("%d fname: %s, sfs: %s\n", x, file_name, sfs);
 
 snprintf (full_path, SMBUFF_SZ, "%s/%s", info->base_path, file_name);
 printf ("[%s]\n", full_path);
 
-fd = open (full_path, O_WRONLY | O_TRUNC| O_CREAT, S_IRUSR | S_IWUSR);
-if (fd == -1) {printf ("err%d\n", errno);  killme ("error 1141");}
+info->fd = open (full_path, O_WRONLY | O_TRUNC| O_CREAT, S_IRUSR | S_IWUSR);
+if (info->fd == -1) {printf ("err%d\n", errno);  killme ("error 1141");}
 info->nfo_prog = d2;
+
+
 } // if file A
+
+} // loop
+return 1;
+} // func
 /*
 if (info->calibrated == false)
 {
@@ -1125,28 +1155,10 @@ break;
 
 } // inbuff loop
 // inbuff control loop
-*/
+
 return 1;
 } // process filebuffer
-
-int process_filenfo (const buffer_t *inbuff, struct pfinfo *info){// bm process filenfo
-int rtn = 0;
-
-char *p1 = memmem (inbuff->p, inbuff->len, "nfo", 3);
-if (p1 == NULL) killme ("memmem 1096");
-int d1 = p1 - inbuff->p;
-char *p2 = memmem (inbuff->p + d1+1, inbuff->len  - d1-1, "nfo", 3);
-if (p1 == NULL) killme ("memmem 1101");
-int d2 = p2 - inbuff->p;
-rtn = d2;
-info->nfo_len = d2 - d1;
-if (info->nfo_len > SMBUFF_SZ)killme ("buffer overflow");
-memcpy (info->nfo, inbuff->p + d1, info->nfo_len);
-info->nfo [info->nfo_len] = 0;
-//printf ("nfo: %s\n",info->nfo);
-end_point:;
-return rtn;
-} // process file nfo
+*/
 
 int post_file (const struct request_data req)
 { // bm post_file
@@ -1170,17 +1182,6 @@ if (offset == -1) return 0;
 
 
 bool nfo_done = false;
-
-/*
-struct pfinfo {
-const char *base_path;
-int inbuff_prog;
-int fd;
-int nfo_prog;
-int nfo_len;
-char nfo SMBUFF_SZ;
-}; // struct
-*/
 
 
 if (offset)
@@ -1212,9 +1213,9 @@ if (inbuff.len!=read_req && read_req>0) killme ("no ==");
 if (nfo_done == false)
 {info.inbuff_prog=process_filenfo (&inbuff, &info);nfo_done=true;
 printf ("nfo: %s\n", info.nfo);
-}
-// if nfo
+}// if nfo
 
+process_filebuffer (&inbuff, &info);
 
 } // reader loop
 
