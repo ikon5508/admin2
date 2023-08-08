@@ -33,20 +33,21 @@
 #define LGBUFF_SZ 100000
 
 #define test_mode "/test"
-#define upload_mode "/upload"
 #define edit_mode "/edit"
 #define action_mode "/action"
 #define ace_builds_mode "/ace-builds"
-#define config_mode "/config"
-#define websock_mode "/websock"
+#define sup_mode "/sup"
+#define pblog_mode "/pblog"
+#define ublog_mode "/ublog"
 
 const int test_mode_len = strlen (test_mode);
-const int upload_mode_len = strlen (upload_mode);
+const int sup_mode_len = strlen (sup_mode);
 const int action_mode_len = strlen (action_mode);
 const int edit_mode_len = strlen (edit_mode);
 const int ace_builds_mode_len = strlen (ace_builds_mode);
-const int config_mode_len = strlen (config_mode);
-const int websock_mode_len = strlen (websock_mode);
+const int ublog_mode_len = strlen (ublog_mode);
+const int pblog_mode_len = strlen (pblog_mode);
+
 
 #define THREAD_POOL_SIZE 0
 pthread_t thread_pool[THREAD_POOL_SIZE];
@@ -125,7 +126,7 @@ char editor [SMBUFF_SZ];
 }settings = {9999, true, 1, ".", ".", "aceeditor.htm"};
 
 enum emode
-{root, err, file, edit, action, upload, config, favicon, websock, ace_builds, test};
+{err, root, edit, action, sup, favicon, pblog, ace_builds, test, ublog};
 
 enum rtype
 {none, reg, dir};
@@ -199,6 +200,8 @@ void far_clear (struct far_builder *b);
 void softclose (const int fd, struct buffer_data *inbuff);
 int getnext (const char *base, const int c, const int offset, const int len);
 
+int indexOfS (const buffer_t *str, const char *s, const int start);
+int indexOfC (const buffer_t *str, const char c, const int start);
 int prepsocket (const int PORT);
 int sock_setnonblock (const int fd);
 int send_file2 (const char *path, const int fd);
@@ -211,13 +214,15 @@ int send_ftxt (const int fd, const char *format, ...);
 int serv_dir (const struct request_data request);
 int serv_file (const struct request_data request);
 int get_file (const struct settings_data settings, const struct request_data request);
-int post_file (const struct request_data);
+int single_upload (const struct request_data *);
 int parse_request (struct request_data *request, const int fd, const struct buffer_data inbuff);
-int post_edit (const struct request_data request);
+int fetch_edit (struct request_data *request);
 int get_edit (const struct request_data request);
 int get_config (const struct settings_data settings, const struct request_data request);
 int send_txt (const io_t io, const char *txt);
 
+int post_edit (const struct request_data *request);
+int parse_boundary (const buffer_t *mainbuff, buffer_t *boundary);
 // old io funcs
 //int sock_1writeold (const int connfd, const char *buffer, const int size);
 //int sock_buffwrite (const int connfd, struct buffer_data *out);
@@ -600,24 +605,6 @@ if (a <= 0)
 return 1;
 } // websock
 
-/*
-int get_nextsize (struct string_data *fdata)
-{
-int n = getnext (fdata->p, ':', fdata->procint + 1, fdata->len);
-if (n ==-1) n = fdata->len;
-
-char temp [10];
-
-midstr (fdata->p, temp, fdata->procint + 1, n);
-
-int rtn = atoi (temp);
-
-fdata->procint = n;
-
-return rtn;
-
-}
-*/
 
 int process_get (const io_t io, const struct request_data request)
 { // bm process_get
@@ -643,9 +630,6 @@ break;
 case edit:
 	get_edit (request);
 break;
-case websock:
-get_websock (request);
-break;
 case err:
 send_err (io, 500);
 break;
@@ -664,8 +648,9 @@ printf ("default %s\n", request.mode_text);
 return 1;
 } // end process_get
 
-int run_make (const struct request_data request)
+int run_make (struct request_data *request)
 {// bm run make
+/*
 printf ("run make! %s\n", request.mainbuff->p);
 
 int pipefd[2];
@@ -727,7 +712,8 @@ res.p [res.len] = 0;
 send_txt (request.io, res.p);
 return 1;
 } // if else child
-
+*/
+return 1;
 } // run make
 
 int post_config (const struct request_data request)
@@ -749,24 +735,26 @@ else killme ("kill parent");
  */ 
     return 1;
 } // post config
+/*
+ 
 
-int process_post (const io_t io, const struct request_data request)
+
+*/
+
+
+int process_post (const io_t io, struct request_data *request)
 { // bm process_post
-printf ("POST: %s\n", request.url);
-
-switch (request.mode) {
+printf ("POST: %s\n", request->url);
+switch (request->mode) {
 case edit:
- 	if (!strcmp (request.params, "make")) run_make (request);
-	else post_edit (request);
+
+if (!strcmp (request->params, "make")) run_make (request);
+else if (!strcmp (request->params, "fetch")) fetch_edit (request);
+else post_edit (request);
 
 break;
-case upload:
-	if (!post_file (request)) printf ("post rtn =0\n");
-	
-break;
-case config:
-    post_config (request);
-
+case sup:
+	single_upload (request);
 break;
 default:
 	send_txt (io, "Unhandled mode");
@@ -854,7 +842,7 @@ if (request.method == 'G') {
 process_get (io, request);
 //printf ("get from thread %d\n", data->id);
 } else if (request.method == 'P') {
-process_post (io, request);
+process_post (io, &request);
 } // else if POST
 
 
@@ -886,6 +874,31 @@ process_connection (data->id, connfd);
 } // thread loop
 return NULL;
 } // thread function
+
+int indexOfC (const buffer_t *str, const char c, const int start)
+{
+char *p = (char *) memchr (str->p + start, (int) c, str->len - start);
+if (p == NULL) return -1;
+
+return (p - str->p);
+} // indexOfC
+
+
+int indexOfS (const buffer_t *str, const char *s, const int start)
+{
+char *p = (char *) memmem (str->p+start, str->len-start, s, strlen(s));
+if (p == NULL) return -1;
+
+return (p - str->p);
+} // indexOfS
+
+char *C_str (const buffer_t *in, char *str, const int sz)
+{
+memcpy (str, in->p, sz);
+str [sz] = 0;
+return str;
+
+}
 
 int main (int argc, char **argv)
 { // bm main top
@@ -1034,196 +1047,126 @@ if (noboundary == true) free (intbuff.p);
 return rtn;
 } // parse boundary
 
-struct pfinfo {
-const char *base_path;
-int inbuff_prog;
-
-int fd;
-unsigned long file_sz;
-unsigned long file_prog;
-
-int nfo_prog;
-int nfo_len;
-char nfo [SMBUFF_SZ];
-}; // struct
-
-int process_filenfo (const buffer_t *inbuff, struct pfinfo *info)
-{// bm process filenfo
-int rtn = 0;
-
-char *p1 = memmem (inbuff->p, inbuff->len, "nfo", 3);
-if (p1 == NULL) killme ("memmem 1096");
-int d1 = p1 - inbuff->p;
-char *p2 = memmem (inbuff->p + d1+1, inbuff->len  - d1-1, "nfo", 3);
-if (p1 == NULL) killme ("memmem 1101");
-int d2 = p2 - inbuff->p;
-rtn = d2;
-info->nfo_len = d2 - d1;
-if (info->nfo_len > SMBUFF_SZ)killme ("buffer overflow");
-memcpy (info->nfo, inbuff->p + d1-1, info->nfo_len);
-info->nfo [info->nfo_len] = 0;
-printf ("nfo: [%s]\n",info->nfo);
-end_point:;
-return rtn;
-} // process file nfo
-
-
-int process_filebuffer (const buffer_t *inbuff, struct pfinfo *info)
+int post_edit (const struct request_data *request)
 {
-for (int x = 0; x < 10; ++x)
-//while  (1)
+buffer_t data = init_buffer (request->content_len);
+buffer_t boundary = init_buffer (SMBUFF_SZ);
+
+int rtn = parse_boundary (request->mainbuff, &boundary);
+if (rtn) 
 {
-if (info->fd == 0)
-{// pure nfo usage
-char full_path [SMBUFF_SZ];
-char file_name [DEFAULT_SZ];
-char sfs[10];
-
-char *p1 = memchr (info->nfo+info->nfo_prog+1, (int) '/', info->nfo_len-info->nfo_prog-1);
-if (p1 == NULL) killme ("err 1060");
-int d1 = p1 - info->nfo;
-
-char *p2 = memchr (info->nfo+d1+1, (int) '/', info->nfo_len-d1-1);
-if (p2 == NULL) killme ("err 1064");
-int d2 = p2 - info->nfo;
-
-memcpy (file_name, info->nfo+info->nfo_prog+1, d1-info->nfo_prog-1);
-file_name [d2] = 0;
-
-printf ("%d fname:%d-%d [%s]\n", x, d1, d2, file_name);
-
-return 1;
-
-memcpy (sfs, info->nfo+d1+1, d2-d1-1);
-sfs [d2-d1] = 0;
-info->file_sz = atol (sfs);
-printf ("%d fname: %s, sfs: %s\n", x, file_name, sfs);
-
-snprintf (full_path, SMBUFF_SZ, "%s/%s", info->base_path, file_name);
-printf ("[%s]\n", full_path);
-
-info->fd = open (full_path, O_WRONLY | O_TRUNC| O_CREAT, S_IRUSR | S_IWUSR);
-if (info->fd == -1) {printf ("err%d\n", errno);  killme ("error 1141");}
-info->nfo_prog = d2;
-
-
-} // if file A
-
-} // loop
-return 1;
-} // func
-/*
-if (info->calibrated == false)
-{
-//write (fd, inbuff.p+inbuff_prog, inbuff.len-inbuff_prog);
-
-char *p1=memmem (inbuff.p+inbuff_prog, inbuff.len-inbuff_prog, "Content-Type: ", 14);
-if (p1 == NULL) killme ("err 1160");
-int d1 = p1 - inbuff.p;
-
-//write (fd, "\n@@@\n", 5);
-
-
-p1=memchr (inbuff.p+d1, 10, inbuff.len - d1);
-if (p1 == NULL) killme ("err 1166");
-d1 = p1 - inbuff.p;
-inbuff_prog = d1 + 3;
-
-//write (fd, inbuff.p+d1, inbuff.len-d1);
-//close (fd);
-info->calibrated = true;
-} // if calibrated
-
-
-int inbuff_rem = inbuff.len - inbuff_prog;
-if (inbuff_rem > file_rem)
-{
-write (fd, inbuff.p+info->inbuff_prog, file_rem);
-close (fd);
-info->calibrated = false;
-info->file_active = false;
-
-
-printf ("index %d, count %d\n", file_index, file_count);
-if (file_index == file_count) break;
-}else{
-//printf ("writing inc\n");
-write (fd, inbuff.p+inbuff_prog, inbuff.len-inbuff_prog);
-
-break;
-} // if (inbuff_rem < file_rem
-
-} // inbuff loop
-// inbuff control loop
-
-return 1;
-} // process filebuffer
-*/
-
-int post_file (const struct request_data req)
-{ // bm post_file
-
-// max read 1 mb
-//const int MAX_READ = 1000000;
-
-const int MAX_READ = 1000;
-unsigned long content_prog = 0;
-int read_req = (MAX_READ<req.content_len)?MAX_READ:req.content_len;
-
-buffer_t inbuff = init_buffer (read_req);
-memset (inbuff.p, 0, inbuff.max);
-
-//char bichar [DEFAULT_SZ];
-//buffer_t boundary = init_stack (bichar, DEFAULT_SZ);
-//int offset = parse_boundary (req.mainbuff, &boundary);
-int offset = parse_boundary (req.mainbuff, NULL);
-//printf ("offset %d\n", offset);
-if (offset == -1) return 0;
-
-
-bool nfo_done = false;
-
-
-if (offset)
-{
-inbuff.len = req.mainbuff->len - offset;
-if (inbuff.len > inbuff.max) return 0;
-memcpy (inbuff.p, req.mainbuff->p + offset, inbuff.len);
-//save_buffer (&inbuff, "post.txt");
-read_req -= offset;
-content_prog = offset;
-printf ("firefox started in 1st xmission\n");
-//exit (0);
+printf ("started in 1st xmission\n");
+memcpy (data.p, request->mainbuff->p + rtn, request->mainbuff->len - rtn);
+data.len = request->mainbuff->len - rtn;
 }
-printf ("content len: %lu, read_req: %d  \n", req.content_len, read_req);
 
-struct pfinfo info;
-memset (&info, 0, sizeof (struct pfinfo));
-info.base_path = req.full_path;
+data.len = io_read (request->io, data.p, data.len, data.max);
+if (data.len != request->content_len) printf ("content len !=\n");
 
-// read loop
-for (int i = 0; i < 10; ++i)
-//while (1)
+char backup [SMBUFF_SZ];
+strcpy (backup, "old/");
+strcat (backup, "%H:%M-");
+strcat (backup, request->filename);
+time_t t;
+struct tm *tmp;
+t = time(NULL); 
+tmp = localtime(&t);
+if (tmp == NULL) { perror("localtime"); exit(EXIT_FAILURE); } 
+char outstr [SMBUFF_SZ];
+if (strftime(outstr, sizeof(outstr), backup, tmp) == 0) 
+{ fprintf(stderr, "strftime returnd 0"); exit(EXIT_FAILURE); } 
+printf ("backup name [%s]\n", outstr);
+
+if (rename (request->full_path, outstr) == -1)
+	printf ("error moving backup file\n");
+
+
+int start = boundary.len;
+char *p1 = memchr (data.p + start + 2, 10, data.len - start - 2);
+if (p1 == NULL)
+{start = 0;}
+else
+{start = p1 - data.p + 3;}
+
+
+int end = data.len - boundary.len - 7;
+
+int localfd = open (request->full_path, O_WRONLY | O_TRUNC| O_CREAT, S_IRUSR | S_IWUSR);
+if (localfd < 0) {
+printf ("errno %d\n", errno);
+killme ("cannot open file to save");
+} // if error
+
+write (localfd, data.p + start, end - start);
+close (localfd);
+
+send_txt (request->io, "it worked");
+free (data.p);
+
+return 0;} // if there is boundary
+
+int single_upload (const struct request_data *request)
+{ // bm post_file
+buffer_t data = init_buffer (request->content_len);
+buffer_t boundary = init_buffer (SMBUFF_SZ);
+
+// irrelevant
+//printf ("content len: %lu\n", request->content_len);
+
+
+int rtn = parse_boundary (request->mainbuff, &boundary);
+
+if (rtn) 
 {
-if (read_req > 0)  
-inbuff.len = io_read (req.io, inbuff.p, inbuff.len, read_req);
+printf ("started in 1st xmission\n");
+memcpy (data.p, request->mainbuff->p + rtn, request->mainbuff->len - rtn);
+data.len = request->mainbuff->len - rtn;
+}
 
-if (inbuff.len!=read_req && read_req>0) killme ("no ==");
-
-if (nfo_done == false)
-{info.inbuff_prog=process_filenfo (&inbuff, &info);nfo_done=true;
-printf ("nfo: %s\n", info.nfo);
-}// if nfo
-
-process_filebuffer (&inbuff, &info);
-
-} // reader loop
+data.len = io_read (request->io, data.p, data.len, data.max);
+if (data.len != request->content_len) printf ("content len !=\n");
 
 
-free (inbuff.p);
-send_txt (req.io, "post file");
-printf (" ////post file ///// \n");
-exit (0);
+int d1 = indexOfS (&data, "filename=", 0);
+int d2 = indexOfC (&data, '\n', d1);
+printf ("d1 %d, d2 %d\n", d1, d2);
+int len = d2 - d1 - 12;
+char filename [DEFAULT_SZ];
+memcpy (filename, data.p+d1+10, len);
+filename [len] = 0;
+printf ("filename: [%s]\n", filename);
+char full_path [DEFAULT_SZ];
+snprintf (full_path, DEFAULT_SZ, "%s/%s", request->full_path, filename);
+printf ("the path is: [%s]\n", full_path);
+
+int localfd = open (full_path, O_WRONLY | O_TRUNC| O_CREAT, S_IRUSR | S_IWUSR);
+if (localfd < 0) {
+printf ("errno %d\n", errno);
+killme ("cannot open file to save");
+} // if error
+
+d1 = indexOfC (&data, '\n', d2 + 10);
+printf ("endl: %d\n", d1);
+
+while (data.p[d1] == 10 || data.p[d1] == 13)
+++d1;
+
+int start = d1;
+int endoff  = data.len - boundary.len - 10;
+
+//while (data.p[endoff] == 10 || data.p[endoff] == 13 || data.p[endoff] == '-')
+//{--endoff;
+//printf ("adjustng\n");
+//}
+
+write (localfd, data.p + start, endoff - start);
+close (localfd);
+
+free (data.p);
+free (boundary.p);
+send_txt (request->io, "fucking made it");
+printf ("yep\n");
+
 return 1;
 }// post file
 
@@ -1454,28 +1397,19 @@ request->mode = action;
 request->mode_text = action_mode;
 } // if action_mode
 
-p1 = strstr (request->url, config_mode);
+p1 = strstr (request->url, pblog_mode);
 if (p1 != NULL) {
-path_start = config_mode_len;
-request->mode = config;
-request->mode_text = config_mode;
-printf ("config mode det\n");
-} // if config_mode
+path_start = pblog_mode_len;
+request->mode = pblog;
+printf ("post blog mode det\n");
+} // if post blog_mode
 
 
-p1 = strstr (request->url, upload_mode);
+p1 = strstr (request->url, sup_mode);
 if (p1 != NULL) {
-path_start = upload_mode_len;
-request->mode = upload;
-request->mode_text = upload_mode;
+path_start = sup_mode_len;
+request->mode = sup;
 } // if upload_mode
-
-p1 = strstr (request->url, websock_mode);
-if (p1 != NULL) {
-path_start = websock_mode_len;
-request->mode = websock;
-request->mode_text = websock_mode;
-} // if websock_mode
 
 
 p1 = strstr (request->url, ace_builds_mode);
@@ -1594,7 +1528,7 @@ close (file_fd);
 buffer_t bookmarks = init_buffer (MDBUFF_SZ);
 int linecount = 0;
 char *feed = filedata.p;
-buffcatf (&bookmarks, "<select class=\"button\" onchange=\"bookmark(event)\">\n");
+//buffcatf (&bookmarks, "<select class=\"button\" onchange=\"bookmark(event)\">\n");
 const int bmlen = strlen (BOOKMARK);
 while (1)
 {
@@ -1616,7 +1550,7 @@ buffcatf (&bookmarks, "<option value=\"%d\">%s</option>\n", linecount, bm);
 } // if bookmark found
 
 } // while
-buffcatf (&bookmarks, "</select>\n");
+//buffcatf (&bookmarks, "</select>\n");
 
 struct far_builder builder = far_init (&editor);
 
@@ -1648,45 +1582,27 @@ return 1;
 } // get_edit
 
 
-int post_edit (const struct request_data request)
+int fetch_edit (struct request_data *request)
 { // bm post edit
-//save_buffer (request.mainbuff, "POST_EDIT.txt");
+buffer_t encoded = init_buffer (request->content_len);
 
-
-//int progress = 0;
-
-buffer_t encoded = init_buffer (request.content_len);
-//memset (encoded.p, 0, encoded.max)
-
-char *p1 = strchr (request.mainbuff->p, (int) '\"');
+char *p1 = strchr (request->mainbuff->p, (int) '\"');
 if (p1 != NULL) {
-//printf ("started in 1st xmission\n");
-int d1 = p1 - request.mainbuff->p;
-memcpy (encoded.p, request.mainbuff->p + d1, request.mainbuff->len - d1);
-encoded.len = request.mainbuff->len - d1;
-//progress = request.mainbuff->len - d1;
+printf ("started in 1st xmission\n");
+int d1 = p1 - request->mainbuff->p;
+memcpy (encoded.p, request->mainbuff->p + d1, request->mainbuff->len - d1);
+encoded.len = request->mainbuff->len - d1;
 }
 
-/*
-int count = 0;
-while (progress < request.content_len) {
-++count;
-encoded.len += io_read1 (request.io, encoded.p + encoded.len, encoded.max);
-//printf ("multi-reciever\n");
-progress = encoded.len;
-}
-printf ("reader count: %d\n", count);
-*/
+encoded.len = io_read (request->io, encoded.p, encoded.len, encoded.max);
+if (encoded.len != request->content_len) printf ("content len !=\n");
 
-encoded.len = io_read (request.io, encoded.p, encoded.len, encoded.max);
+
 
 char backup [SMBUFF_SZ];
 strcpy (backup, "old/");
 strcat (backup, "%H:%M-");
-strcat (backup, request.filename);
-
-//strcat (backup, request.ext);
-
+strcat (backup, request->filename);
 time_t t;
 struct tm *tmp;
 t = time(NULL); 
@@ -1697,12 +1613,12 @@ if (strftime(outstr, sizeof(outstr), backup, tmp) == 0)
 { fprintf(stderr, "strftime returnd 0"); exit(EXIT_FAILURE); } 
 printf ("backup name [%s]\n", outstr);
 
-if (rename (request.full_path, outstr) == -1)
+if (rename (request->full_path, outstr) == -1)
 	printf ("error moving backup file\n");
 
 buffer_t decoded = JSON_decode (encoded);
 
-int localfd = open (request.full_path, O_WRONLY | O_TRUNC| O_CREAT, S_IRUSR | S_IWUSR);
+int localfd = open (request->full_path, O_WRONLY | O_TRUNC| O_CREAT, S_IRUSR | S_IWUSR);
 if (localfd < 0) {
 printf ("errno %d\n", errno);
 killme ("cannot open file to save");
@@ -1711,11 +1627,11 @@ killme ("cannot open file to save");
 write (localfd, decoded.p, decoded.len);
 close (localfd);
 
-send_txt (request.io, "it worked");
+send_txt (request->io, "it worked");
 free (encoded.p);
 free (decoded.p);
 return 1;
-} //post edit
+} //post fetch
 
 
 int servico (const io_t io)
