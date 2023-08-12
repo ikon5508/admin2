@@ -37,6 +37,8 @@
 #define action_mode "/action"
 #define ace_builds_mode "/ace-builds"
 #define sup_mode "/sup"
+
+#define mup_mode "/mup"
 #define pblog_mode "/pblog"
 #define ublog_mode "/ublog"
 
@@ -48,6 +50,7 @@ const int ace_builds_mode_len = strlen (ace_builds_mode);
 const int ublog_mode_len = strlen (ublog_mode);
 const int pblog_mode_len = strlen (pblog_mode);
 
+const int mup_mode_len = strlen (mup_mode);
 
 #define THREAD_POOL_SIZE 0
 pthread_t thread_pool[THREAD_POOL_SIZE];
@@ -126,7 +129,7 @@ char editor [SMBUFF_SZ];
 }settings = {9999, true, 1, ".", ".", "aceeditor.htm"};
 
 enum emode
-{err, root, edit, action, sup, favicon, pblog, ace_builds, test, ublog};
+{err, root, edit, action, sup, mup, favicon, pblog, ace_builds, test, ublog};
 
 enum rtype
 {none, reg, dir};
@@ -215,6 +218,8 @@ int serv_dir (const struct request_data request);
 int serv_file (const struct request_data request);
 int get_file (const struct settings_data settings, const struct request_data request);
 int single_upload (const struct request_data *);
+
+int multiple_upload (const struct request_data *request);
 int parse_request (struct request_data *request, const int fd, const struct buffer_data inbuff);
 int fetch_edit (struct request_data *request);
 int get_edit (const struct request_data request);
@@ -492,6 +497,24 @@ return 1;
 } //send_redirect
 
 
+int send_reload (const int fd, const char *uri)
+{ // bm send reload
+char outbuff [SMBUFF_SZ];
+char head [SMBUFF_SZ];
+
+int doclen = sprintf (outbuff, "<html><body><script>window.location=\"%s\";</script></body></html>", uri);
+
+
+
+int headlen = sprintf (head, "%s%s%s%s%d\n\n", hthead, conthtml, connclose, contlen, doclen);
+
+//sock_writeold (fd, head, headlen);
+//sock_writeold (fd, outbuff, doclen);
+
+return 1;
+} //send_reload
+
+
 int Base64Encode(const unsigned char* buffer, size_t length, char **b64text) { //Encodes a binary safe base 64 string
 	BIO *bio, *b64;
 	BUF_MEM *bufferPtr;
@@ -756,6 +779,9 @@ break;
 case sup:
 	single_upload (request);
 break;
+case mup:
+	multiple_upload (request);
+break;
 default:
 	send_txt (io, "Unhandled mode");
 } // switch
@@ -903,7 +929,16 @@ return str;
 int main (int argc, char **argv)
 { // bm main top
 //test ();
-signal(SIGPIPE, SIG_IGN);
+sigset_t set;
+int s;
+sigemptyset(&set);
+sigaddset(&set, SIGPIPE);
+s = pthread_sigmask(SIG_BLOCK, &set, NULL);
+if (s != 0)
+killme("pthread_sigmask");
+
+//signal(SIGPIPE, SIG_IGN);
+
 for (int i = 1; i < argc; ++i)
 {
 
@@ -1080,30 +1115,178 @@ printf ("backup name [%s]\n", outstr);
 if (rename (request->full_path, outstr) == -1)
 	printf ("error moving backup file\n");
 
-
-int start = boundary.len;
-char *p1 = memchr (data.p + start + 2, 10, data.len - start - 2);
-if (p1 == NULL)
-{start = 0;}
-else
-{start = p1 - data.p + 3;}
-
-
-int end = data.len - boundary.len - 7;
-
 int localfd = open (request->full_path, O_WRONLY | O_TRUNC| O_CREAT, S_IRUSR | S_IWUSR);
 if (localfd < 0) {
 printf ("errno %d\n", errno);
 killme ("cannot open file to save");
 } // if error
 
+int d1 = indexOfC (&data, '\n', boundary.len + 10);
+//printf ("endl: %d\n", d1);
+d1 += 3;
+
+//while (data.p[d1] == 10 || data.p[d1] == 13)
+//++d1;
+
+int start = d1;
+int end  = data.len - boundary.len - 8;
+
 write (localfd, data.p + start, end - start);
 close (localfd);
 
 send_txt (request->io, "it worked");
 free (data.p);
+free (boundary.p);
+return 0;
+}
 
-return 0;} // if there is boundary
+int multiple_parse (const struct request_data *request)
+{ // bm multiple_file
+printf ("multiple files\n");
+
+buffer_t data = init_buffer (request->content_len);
+buffer_t boundary = init_buffer (SMBUFF_SZ);
+
+// irrelevant
+printf ("MULTIPLE content len: %lu\n", request->content_len);
+
+int rtn = parse_boundary (request->mainbuff, &boundary);
+
+if (rtn) 
+{
+printf ("started in 1st xmission\n");
+memcpy (data.p, request->mainbuff->p + rtn, request->mainbuff->len - rtn);
+data.len = request->mainbuff->len - rtn;
+}
+
+data.len = io_read (request->io, data.p, data.len, data.max);
+if (data.len != request->content_len)
+      	printf ("content len %lu!= %d\n", request->content_len, data.len);
+
+
+
+int offset = 0;
+while (1)
+//for (int i = 0; i < 10; ++i)
+{
+//printf ("file %d (%d)\n", i, offset);
+
+int d1 = indexOfS (&data, "filename=", offset);
+if (d1 == -1) break;
+int d2 = indexOfC (&data, '\n', d1);
+printf ("d1 %d, d2 %d\n", d1, d2);
+int len = d2 - d1 - 12;
+char filename [DEFAULT_SZ];
+memcpy (filename, data.p+d1+10, len);
+filename [len] = 0;
+printf ("filename: [%s]\n", filename);
+char full_path [DEFAULT_SZ];
+snprintf (full_path, DEFAULT_SZ, "%s/%s", request->full_path, filename);
+printf ("the path is: [%s]\n", full_path);
+
+int localfd = open (full_path, O_WRONLY | O_TRUNC| O_CREAT, S_IRUSR | S_IWUSR);
+if (localfd < 0) {
+printf ("errno %d\n", errno);
+killme ("cannot open file to save");
+} // if error
+
+d1 = indexOfC (&data, '\n', d2 + 10);
+d1 += 3;
+
+int start = d1;
+
+char *p1 = memmem (data.p+start, data.len-start, boundary.p, boundary.len);
+if (p1 == NULL) 
+killme ("no boundary");
+	
+int endoff = p1 - data.p - 4;
+offset = endoff;
+write (localfd, data.p + start, endoff - start);
+close (localfd);
+
+
+} // loop
+
+free (data.p);
+free (boundary.p);
+send_txt (request->io, "fucking made it");
+
+return 1;
+}// multiple parse
+
+int multiple_upload (const struct request_data *request)
+{ // bm multiple_file
+printf ("multiple files\n");
+
+buffer_t data = init_buffer (request->content_len);
+buffer_t boundary = init_buffer (SMBUFF_SZ);
+
+// irrelevant
+printf ("MULTIPLE content len: %lu\n", request->content_len);
+
+int rtn = parse_boundary (request->mainbuff, &boundary);
+
+if (rtn) 
+{
+printf ("started in 1st xmission\n");
+memcpy (data.p, request->mainbuff->p + rtn, request->mainbuff->len - rtn);
+data.len = request->mainbuff->len - rtn;
+}
+
+data.len = io_read (request->io, data.p, data.len, data.max);
+if (data.len != request->content_len)
+      	printf ("content len %lu!= %d\n", request->content_len, data.len);
+
+
+
+int offset = 0;
+while (1)
+//for (int i = 0; i < 10; ++i)
+{
+//printf ("file %d (%d)\n", i, offset);
+
+int d1 = indexOfS (&data, "filename=", offset);
+if (d1 == -1) break;
+int d2 = indexOfC (&data, '\n', d1);
+printf ("d1 %d, d2 %d\n", d1, d2);
+int len = d2 - d1 - 12;
+char filename [DEFAULT_SZ];
+memcpy (filename, data.p+d1+10, len);
+filename [len] = 0;
+printf ("filename: [%s]\n", filename);
+char full_path [DEFAULT_SZ];
+snprintf (full_path, DEFAULT_SZ, "%s/%s", request->full_path, filename);
+printf ("the path is: [%s]\n", full_path);
+
+int localfd = open (full_path, O_WRONLY | O_TRUNC| O_CREAT, S_IRUSR | S_IWUSR);
+if (localfd < 0) {
+printf ("errno %d\n", errno);
+killme ("cannot open file to save");
+} // if error
+
+d1 = indexOfC (&data, '\n', d2 + 10);
+d1 += 3;
+
+int start = d1;
+
+char *p1 = memmem (data.p+start, data.len-start, boundary.p, boundary.len);
+if (p1 == NULL) 
+killme ("no boundary");
+	
+int endoff = p1 - data.p - 4;
+offset = endoff;
+write (localfd, data.p + start, endoff - start);
+close (localfd);
+
+
+} // loop
+
+free (data.p);
+free (boundary.p);
+send_txt (request->io, "fucking made it");
+
+return 1;
+}// multiple file
 
 int single_upload (const struct request_data *request)
 { // bm post_file
@@ -1112,7 +1295,6 @@ buffer_t boundary = init_buffer (SMBUFF_SZ);
 
 // irrelevant
 //printf ("content len: %lu\n", request->content_len);
-
 
 int rtn = parse_boundary (request->mainbuff, &boundary);
 
@@ -1146,10 +1328,11 @@ killme ("cannot open file to save");
 } // if error
 
 d1 = indexOfC (&data, '\n', d2 + 10);
-printf ("endl: %d\n", d1);
+d1 += 3;
 
-while (data.p[d1] == 10 || data.p[d1] == 13)
-++d1;
+//printf ("endl: %d\n", d1);
+//while (data.p[d1] == 10 || data.p[d1] == 13)
+//++d1;
 
 int start = d1;
 int endoff  = data.len - boundary.len - 10;
@@ -1411,6 +1594,11 @@ path_start = sup_mode_len;
 request->mode = sup;
 } // if upload_mode
 
+p1 = strstr (request->url, mup_mode);
+if (p1 != NULL) {
+path_start = mup_mode_len;
+request->mode = mup;
+} // if upload_mode
 
 p1 = strstr (request->url, ace_builds_mode);
 if (p1 != NULL) {
