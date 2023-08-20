@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html>
+<head>
+
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<style>
+* {
+padding: 0;
+margin: 0;
+font-family: 'Popins', sans-serif;
+box-sizing: border-box;
+}
+
+body {
+background: #454545;
+color: #fff;
+
+}
+
+.container {
+width: 100%;
+height: 100vh;
+padding: 20px;
+display: flex;
+}
+
+.left, .right {
+flex-basis: 50%;
+padding: 10px;
+}
+
+textarea {
+width: 100%;
+height: 28%;
+background: #1f1f1f;
+color: #fff;
+padding: 10px 20px;
+border: 0;
+outline: 0;
+font-size: 18px;
+
+}
+
+iframe {
+width: 100%;
+height: 95%;
+background: #fff;
+border: 0;
+outline: 0;
+
+}
+</style>
+<title> HTML / CSS / JS playground</title>
+
+</head>
+<body>
+
+<div class="container">
+<div class="left">
+	<label>HTML</label>
+	<textarea id="html-code" onkeyup="run()"></textarea>
+
+	<label>CSS</label>
+	<textarea id="css-code" onkeyup="run()"></textarea>
+
+	<label>JS</label>
+	<textarea id="js-code" onkeyup="run()"></textarea>
+
+
+</div>
+
+<div class="right"><iframe id="output"></iframe></div>
+
+</div>
+
+
+<script>
+function run () {
+
+let htmlcode = document.getElementById("html-code").value;
+let csscode = document.getElementById("css-code").value;
+let jscode = document.getElementById("js-code").value;
+let output = document.getElementById("output");
+
+output.contentDocument.body.innerHTML = htmlcode + "<style>" + csscode + "</style>";
+output.contentWindow.eval (jscode);
+
+}
+
+</script>
+
+</body>
+</html>

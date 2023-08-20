@@ -39,16 +39,16 @@
 #define sup_mode "/sup"
 
 #define mup_mode "/mup"
-#define pblog_mode "/pblog"
-#define ublog_mode "/ublog"
+#define blog_mode "/blog"
+#define login_mode "/login"
 
 const int test_mode_len = strlen (test_mode);
 const int sup_mode_len = strlen (sup_mode);
 const int action_mode_len = strlen (action_mode);
 const int edit_mode_len = strlen (edit_mode);
 const int ace_builds_mode_len = strlen (ace_builds_mode);
-const int ublog_mode_len = strlen (ublog_mode);
-const int pblog_mode_len = strlen (pblog_mode);
+const int blog_mode_len = strlen (blog_mode);
+const int login_mode_len = strlen (login_mode);
 
 const int mup_mode_len = strlen (mup_mode);
 
@@ -84,13 +84,16 @@ struct _stopwatch
 struct timespec start, end;
 int sec, msec;
 };
-
 typedef struct _stopwatch stopwatch_t;
+
+// own
+// edit
+// resize
 
 struct buffer_data
 {
 char *p;
-int procint;
+unsigned char state;
 int len;
 int max;
 };
@@ -129,7 +132,7 @@ char editor [SMBUFF_SZ];
 }settings = {9999, true, 1, ".", ".", "aceeditor.htm"};
 
 enum emode
-{err, root, edit, action, sup, mup, favicon, pblog, ace_builds, test, ublog};
+{err, root, file, edit, action, sup, mup, favicon, blog, ace_builds, test, notes, login};
 
 enum rtype
 {none, reg, dir};
@@ -173,15 +176,15 @@ const char *contlen = "Content-Length: ";
 const char  BOOKMARK [] = {'/', '/', ' ', 'b', 'm', ' '};
 
 SSL_CTX *ctx;
-const int timeout = 3;
+const int timeout = 5;
 
 int extract_SC (const buffer_t *src, char *ex, const int exmax, const char *d1, const char d2);
 int FAR (buffer_t *base, const char *delim, const buffer_t rep);
 int extract_CC (const buffer_t src, char *ex, const int exmax, const char d1, const char d2);
 struct buffer_data init_buffer (const int sz);
 void buffcatf (struct buffer_data *buff, const char *format, ...);
-//void stopwatch_start (stopwatch_t *t);
-//void stopwatch_stop (stopwatch_t *t);
+void stopwatch_begin (stopwatch_t *);
+int stopwatch_end (stopwatch_t *);
 //void result (int *sec, int *ms);
 int strsearch (const char *main, const char *minor, const int start);
 int midstr(const char *major, char *minor, int start, const int end);
@@ -239,6 +242,9 @@ int sock_read (const io_t, char *, int, const int);
 int sock_read1 (const io_t, char *, const int);
 int sock_send_file (const io_t, const char *);
 
+SSL_CTX *create_context();
+void configure_context(SSL_CTX *ctx);
+int tls_accept (io_t *io);
 int tls_read1 (const io_t, char *, const int);
 int tls_read (const io_t, char *, int, const int);
 int tls_write (const io_t, const char *, const int);
@@ -252,36 +258,6 @@ int (*io_write1) (const io_t, const char *, const int) = tls_write1;
 int (*send_file) (const io_t, const char *) = tls_send_file;
 
 
-SSL_CTX *create_context()
-{
-    const SSL_METHOD *method;
-    SSL_CTX *ctx;
-
-    method = TLS_server_method();
-
-    ctx = SSL_CTX_new(method);
-    if (!ctx) {
-        perror("Unable to create SSL context");
-        ERR_print_errors_fp(stderr);
-        exit(EXIT_FAILURE);
-    }
-
-    return ctx;
-}
-
-void configure_context(SSL_CTX *ctx)
-{
-    /* Set the key and cert */
-    if (SSL_CTX_use_certificate_file(ctx, "server.crt", SSL_FILETYPE_PEM) <= 0) {
-        ERR_print_errors_fp(stderr);
-        exit(EXIT_FAILURE);
-    }
-
-    if (SSL_CTX_use_PrivateKey_file(ctx, "server.key", SSL_FILETYPE_PEM) <= 0 ) {
-        ERR_print_errors_fp(stderr);
-        exit(EXIT_FAILURE);
-    }
-}
 
 int get_action (const struct request_data request)
 {
@@ -758,12 +734,110 @@ else killme ("kill parent");
  */ 
     return 1;
 } // post config
-/*
- 
 
 
-*/
+struct nvpair {
+char *name;
+buffer_t value;
+struct nvpair *next;
+};
 
+int multiple_parse (struct nvpair *out, const struct request_data *request)
+{ // bm multiple_file
+printf ("multiple files\n");
+
+buffer_t data = init_buffer (request->content_len);
+buffer_t boundary = init_buffer (SMBUFF_SZ);
+
+printf ("MULTIPLE content len: %lu\n", request->content_len);
+int rtn = parse_boundary (request->mainbuff, &boundary);
+
+if (rtn) 
+{
+printf ("started in 1st xmission\n");
+memcpy (data.p, request->mainbuff->p + rtn, request->mainbuff->len - rtn);
+data.len = request->mainbuff->len - rtn;
+}
+
+data.len = io_read (request->io, data.p, data.len, data.max);
+if (data.len != request->content_len)
+      	printf ("content len %lu!= %d\n", request->content_len, data.len);
+
+
+int item_count = 0;
+struct nvpair *current = out;
+
+int offset = 0;
+while (1)
+//for (int i = 0; i < 10; ++i)
+{
+++item_count;
+printf ("item %d (%d)\n", item_count, offset);
+
+int d1 = indexOfS (&data, "name=", offset);
+if (d1 == -1) break;
+
+// add new node if current != data
+//
+if (item_count > 1)
+{
+struct nvpair *nw = malloc (sizeof(struct nvpair));
+current->next = nw;
+current = nw;
+} // if list grow
+
+
+int d2 = indexOfC (&data, '\n', d1);
+printf ("d1 %d, d2 %d\n", d1, d2);
+int len = d2 - d1 - 12;
+
+current->name = malloc (len + 1);
+memcpy (current->name, data.p+d1+10, len);
+current->name [len] = 0;
+
+printf (" -%d: [%s]", item_count, current->name);
+
+d1 = indexOfC (&data, '\n', d2 + 10);
+d1 += 3;
+
+int start = d1;
+
+char *p1 = memmem (data.p+start, data.len-start, boundary.p, boundary.len);
+if (p1 == NULL) 
+killme ("no boundary");
+	
+int endoff = p1 - data.p - 4;
+len = endoff - start;
+offset = endoff;
+//write (localfd, data.p + start, endoff - start);
+current->value = init_buffer (len);
+memcpy (current->value.p, data.p+start, len);
+current->value.len = len;
+printf ("[%.*s]", current->value.len, current->value.p);
+} // loop
+printf ("\n");
+
+free (data.p);
+free (boundary.p);
+send_txt (request->io, "fucking made it");
+
+return item_count;
+}// multiple parse
+
+int post_login (const struct request_data *request)
+{
+printf ("post login\n");
+struct nvpair *data;
+
+int item_count = multiple_parse (data, request);
+
+printf ("item count %d\n", item_count);
+
+send_txt (request->io, "uh huh");
+return 1;
+
+
+}// post login
 
 int process_post (const io_t io, struct request_data *request)
 { // bm process_post
@@ -782,50 +856,15 @@ break;
 case mup:
 	multiple_upload (request);
 break;
+case login:
+	post_login (request);
+break;
 default:
 	send_txt (io, "Unhandled mode");
 } // switch
 return 1;
 } // process post
 
-int tls_accept (io_t *io)
-{ // bm tls accept
-
-while (1)
-{
-struct pollfd pfd;
-pfd.fd = io->connfd;
-pfd.events = POLLIN | POLLOUT;
-int rtn = poll (&pfd, 1, timeout);
-if (rtn < 1) {printf ("tls accept failure 754\n"); return -1;} 
-int rt = SSL_accept(io->ssl);
-
-if (rt > 0)
-    return 1;
-
-else if (rt <= 0)
-{
-int rt2 = SSL_get_error(io->ssl, rt);
-
-if (rt2 == SSL_ERROR_WANT_WRITE || rt2 == SSL_ERROR_WANT_READ) {
-//printf ("want read / write\n");
-continue;
-
-} else if (rt2 == SSL_ERROR_WANT_CONNECT || rt2 == SSL_ERROR_WANT_ACCEPT){
-//printf ("want connect / accept\n");
-continue;
-    
-} else {
-printf ("non recoverable error\n");
-   return -1;
-} //if rt2
-
-} // if rt-1
-
-} // while
-
-return -1;
-}
 
 int process_connection (const int thread_id, const int connfd)
 {
@@ -888,6 +927,7 @@ void *thread_function (void *arg)
 struct sthread_db *data = arg;
 printf ("thread init id %d\n", data->id);
 while (1) {
+
 pthread_mutex_lock(&mutex);
 pthread_cond_wait(&condition_var, &mutex);
 int connfd = trigger.connfd;
@@ -901,52 +941,60 @@ process_connection (data->id, connfd);
 return NULL;
 } // thread function
 
-int indexOfC (const buffer_t *str, const char c, const int start)
+
+void hbytes (int *mb, int *kb, int *b, int bytes)
 {
-char *p = (char *) memchr (str->p + start, (int) c, str->len - start);
-if (p == NULL) return -1;
-
-return (p - str->p);
-} // indexOfC
-
-
-int indexOfS (const buffer_t *str, const char *s, const int start)
+if (bytes > 1000000)
+{	
+	*mb = bytes / 1000000;
+	*kb = bytes % 1000000;
+	bytes = bytes % 1000000;
+}
+if (bytes > 1000)
 {
-char *p = (char *) memmem (str->p+start, str->len-start, s, strlen(s));
-if (p == NULL) return -1;
+*kb = bytes / 1000;
+*b = bytes % 1000;
+}
+} // hbytes
 
-return (p - str->p);
-} // indexOfS
+void diagtest (int num) {
 
-char *C_str (const buffer_t *in, char *str, const int sz)
-{
-memcpy (str, in->p, sz);
-str [sz] = 0;
-return str;
+
+
+int mb, kb, b;
+
+hbytes (&mb, &kb, &b, num);
+
+printf ("mb: %d, kb: %d, b: %d\n", mb, kb, b);
+
+killme ("done");
+
 
 }
 
+
+
+
 int main (int argc, char **argv)
 { // bm main top
-//test ();
-sigset_t set;
+// we are recoding slice and timer funcs!
+//diagtest (atoi(argv[1]));
+	
+/*sigset_t set;
 int s;
 sigemptyset(&set);
 sigaddset(&set, SIGPIPE);
 s = pthread_sigmask(SIG_BLOCK, &set, NULL);
 if (s != 0)
 killme("pthread_sigmask");
-
-//signal(SIGPIPE, SIG_IGN);
+*/
+signal(SIGPIPE, SIG_IGN);
 
 for (int i = 1; i < argc; ++i)
 {
 
 if (!strcmp (argv[i], "-p"))
 settings.port = atoi (argv[i+1]);
-
-//if (!strcmp (argv[i], "-tc"))
-//THREAD_POOL_SIZE = atoi (argv[i+1]);
 
 if (!strcmp (argv[i], "-dir"))
 strcpy (settings.base_path, argv[i+1]);
@@ -1140,80 +1188,6 @@ free (boundary.p);
 return 0;
 }
 
-int multiple_parse (const struct request_data *request)
-{ // bm multiple_file
-printf ("multiple files\n");
-
-buffer_t data = init_buffer (request->content_len);
-buffer_t boundary = init_buffer (SMBUFF_SZ);
-
-// irrelevant
-printf ("MULTIPLE content len: %lu\n", request->content_len);
-
-int rtn = parse_boundary (request->mainbuff, &boundary);
-
-if (rtn) 
-{
-printf ("started in 1st xmission\n");
-memcpy (data.p, request->mainbuff->p + rtn, request->mainbuff->len - rtn);
-data.len = request->mainbuff->len - rtn;
-}
-
-data.len = io_read (request->io, data.p, data.len, data.max);
-if (data.len != request->content_len)
-      	printf ("content len %lu!= %d\n", request->content_len, data.len);
-
-
-
-int offset = 0;
-while (1)
-//for (int i = 0; i < 10; ++i)
-{
-//printf ("file %d (%d)\n", i, offset);
-
-int d1 = indexOfS (&data, "filename=", offset);
-if (d1 == -1) break;
-int d2 = indexOfC (&data, '\n', d1);
-printf ("d1 %d, d2 %d\n", d1, d2);
-int len = d2 - d1 - 12;
-char filename [DEFAULT_SZ];
-memcpy (filename, data.p+d1+10, len);
-filename [len] = 0;
-printf ("filename: [%s]\n", filename);
-char full_path [DEFAULT_SZ];
-snprintf (full_path, DEFAULT_SZ, "%s/%s", request->full_path, filename);
-printf ("the path is: [%s]\n", full_path);
-
-int localfd = open (full_path, O_WRONLY | O_TRUNC| O_CREAT, S_IRUSR | S_IWUSR);
-if (localfd < 0) {
-printf ("errno %d\n", errno);
-killme ("cannot open file to save");
-} // if error
-
-d1 = indexOfC (&data, '\n', d2 + 10);
-d1 += 3;
-
-int start = d1;
-
-char *p1 = memmem (data.p+start, data.len-start, boundary.p, boundary.len);
-if (p1 == NULL) 
-killme ("no boundary");
-	
-int endoff = p1 - data.p - 4;
-offset = endoff;
-write (localfd, data.p + start, endoff - start);
-close (localfd);
-
-
-} // loop
-
-free (data.p);
-free (boundary.p);
-send_txt (request->io, "fucking made it");
-
-return 1;
-}// multiple parse
-
 int multiple_upload (const struct request_data *request)
 { // bm multiple_file
 printf ("multiple files\n");
@@ -1238,25 +1212,27 @@ if (data.len != request->content_len)
       	printf ("content len %lu!= %d\n", request->content_len, data.len);
 
 
+int filecount = 0;
 
 int offset = 0;
 while (1)
 //for (int i = 0; i < 10; ++i)
 {
-//printf ("file %d (%d)\n", i, offset);
+++filecount;
+	//printf ("file %d (%d)\n", i, offset);
 
 int d1 = indexOfS (&data, "filename=", offset);
 if (d1 == -1) break;
 int d2 = indexOfC (&data, '\n', d1);
-printf ("d1 %d, d2 %d\n", d1, d2);
+//printf ("d1 %d, d2 %d\n", d1, d2);
 int len = d2 - d1 - 12;
 char filename [DEFAULT_SZ];
 memcpy (filename, data.p+d1+10, len);
 filename [len] = 0;
-printf ("filename: [%s]\n", filename);
+printf (" %d: [%s]\n", filecount, filename);
 char full_path [DEFAULT_SZ];
 snprintf (full_path, DEFAULT_SZ, "%s/%s", request->full_path, filename);
-printf ("the path is: [%s]\n", full_path);
+//printf ("the path is: [%s]\n", full_path);
 
 int localfd = open (full_path, O_WRONLY | O_TRUNC| O_CREAT, S_IRUSR | S_IWUSR);
 if (localfd < 0) {
@@ -1280,6 +1256,7 @@ close (localfd);
 
 
 } // loop
+printf ("\n");
 
 free (data.p);
 free (boundary.p);
@@ -1557,6 +1534,8 @@ int path_end = url_len;
 int path_start = 0;
 char *base_path = settings.base_path;
 
+
+
 char *p1 = strchr (request->url, '?');
 if (p1 != NULL) {
 path_end = p1 - request->url;
@@ -1565,7 +1544,13 @@ request->params [url_len - path_end] = 0;
 //printf ("URL Params: %s\n", request->params);
 } // if uri params
 
-p1 = strstr (request->url, edit_mode);
+// wrong...need starts with function
+//
+//p1 = memmem (request->url.p, edit_mode_len, edit_mode, edit_mode_len);
+
+//int d1 = indexOfS (&request->url, edit_mode, 0);
+
+p1 = memmem (request->url, edit_mode_len, edit_mode, edit_mode_len);
 if (p1 != NULL) {
 path_start = edit_mode_len;
 request->mode = edit;
@@ -1573,18 +1558,19 @@ request->mode_text = edit_mode;
 //printf ("edit mode det!\n");
 } // if edit_mode
 
-p1 = strstr (request->url, action_mode);
+p1 = memmem (request->url, action_mode_len, action_mode, action_mode_len);
 if (p1 != NULL) {
 path_start = action_mode_len;
 request->mode = action;
 request->mode_text = action_mode;
 } // if action_mode
 
-p1 = strstr (request->url, pblog_mode);
+/*
+p1 = strstr (request->url, blog_mode);
 if (p1 != NULL) {
-path_start = pblog_mode_len;
-request->mode = pblog;
-printf ("post blog mode det\n");
+path_start = blog_mode_len;
+request->mode = blog;
+printf ("blog mode det\n");
 } // if post blog_mode
 
 
@@ -1593,11 +1579,18 @@ if (p1 != NULL) {
 path_start = sup_mode_len;
 request->mode = sup;
 } // if upload_mode
+*/
 
-p1 = strstr (request->url, mup_mode);
+p1 = memmem (request->url, mup_mode_len, mup_mode, mup_mode_len);
 if (p1 != NULL) {
 path_start = mup_mode_len;
 request->mode = mup;
+} // if upload_mode
+
+p1 = memmem (request->url, login_mode_len, login_mode, login_mode_len);
+if (p1 != NULL) {
+path_start = login_mode_len;
+request->mode = login;
 } // if upload_mode
 
 p1 = strstr (request->url, ace_builds_mode);
@@ -2305,7 +2298,12 @@ int tls_read (const io_t io, char *buffer, int len, const int max)
 struct pollfd ev;
 ev.fd = io.connfd;
 ev.events = POLLIN;
-//printf ("tls read\n");
+
+stopwatch_t timer;
+int seconds = 0, oldbytes = 0;
+stopwatch_begin (&timer);
+
+printf ("tls read\n");
 //int len = 0;
 
 while (len < max)
@@ -2315,21 +2313,19 @@ if (r == 0) return len;
 
 r = -1;
 while (r == -1)
+
 {
 r = SSL_read (io.ssl, buffer + len, max - len);
 
 if (r == -1)
 {
 int rt2 = SSL_get_error(io.ssl, r);
-
 if (rt2 == SSL_ERROR_WANT_WRITE || rt2 == SSL_ERROR_WANT_READ) {
 //printf ("r/w: "); 
 continue;
-
 } else if (rt2 == SSL_ERROR_WANT_CONNECT || rt2 == SSL_ERROR_WANT_ACCEPT){
 //printf ("want connect / accept\n");
 continue;
-    
 } else {
 //printf ("non recoverable error\n");
  return len;
@@ -2338,7 +2334,42 @@ continue;
 len += r;
 }// while
 
+int rtn = stopwatch_end (&timer);
+if (rtn > seconds) 
+{
+seconds = rtn;
+int newbytes = len - oldbytes;
+int mb = 0, kb = 0, b = 0;
+
+hbytes (&mb, &kb, &b, newbytes);
+
+if (kb > 0)
+printf ("\r %d.%d KB/S", kb, b);
+else
+printf ("\r %d B/S", b);
+
+fflush(stdout);
+oldbytes = len;
+} // if seconds +1
+
 } // while
+printf ("\n");
+stopwatch_end (&timer);
+
+
+
+
+
+int rate = len / timer.sec;	
+int mb = 0, kb = 0, b = 0;
+hbytes (&mb, &kb, &b, rate);
+
+
+if (kb > 0)
+printf ("average %d.%d KB/S\n", kb, b);
+else
+printf ("average  %d B/S\n", b);
+
 return len;  
 } // tla_read
 
@@ -2396,7 +2427,74 @@ return accrue;
 
 } // tls write
 
+SSL_CTX *create_context()
+{
+    const SSL_METHOD *method;
+    SSL_CTX *ctx;
 
+    method = TLS_server_method();
+
+    ctx = SSL_CTX_new(method);
+    if (!ctx) {
+        perror("Unable to create SSL context");
+        ERR_print_errors_fp(stderr);
+        exit(EXIT_FAILURE);
+    }
+
+    return ctx;
+}
+
+void configure_context(SSL_CTX *ctx)
+{
+    /* Set the key and cert */
+    if (SSL_CTX_use_certificate_file(ctx, "server.crt", SSL_FILETYPE_PEM) <= 0) {
+        ERR_print_errors_fp(stderr);
+        exit(EXIT_FAILURE);
+    }
+
+    if (SSL_CTX_use_PrivateKey_file(ctx, "server.key", SSL_FILETYPE_PEM) <= 0 ) {
+        ERR_print_errors_fp(stderr);
+        exit(EXIT_FAILURE);
+    }
+}
+int tls_accept (io_t *io)
+{ // bm tls accept
+
+while (1)
+{
+struct pollfd pfd;
+pfd.fd = io->connfd;
+pfd.events = POLLIN | POLLOUT;
+int rtn = poll (&pfd, 1, timeout);
+if (rtn < 1) {printf ("tls accept failure 754\n"); return -1;} 
+int rt = SSL_accept(io->ssl);
+
+if (rt > 0)
+    return 1;
+
+else if (rt <= 0)
+{
+int rt2 = SSL_get_error(io->ssl, rt);
+
+if (rt2 == SSL_ERROR_WANT_WRITE || rt2 == SSL_ERROR_WANT_READ) {
+//printf ("want read / write\n");
+continue;
+
+} else if (rt2 == SSL_ERROR_WANT_CONNECT || rt2 == SSL_ERROR_WANT_ACCEPT){
+//printf ("want connect / accept\n");
+continue;
+    
+} else {
+printf ("non recoverable error\n");
+   return -1;
+} //if rt2
+
+} // if rt-1
+
+} // while
+
+return -1;
+}
 int sock_write (const io_t io, const char *buffer, const int size)
 {// bm sock write
 //printf ("sock writing\n");
@@ -3255,7 +3353,6 @@ if (buffer.p == NULL) killme ("error malloc");
 
 buffer.max = sz;
 buffer.len = 0;
-buffer.procint = 0;
 
 return buffer;
    
@@ -3263,42 +3360,6 @@ return buffer;
 
 
 
-/*
-timer_c::timer_c ()
-{ // bm timer constructor
-clock_gettime (CLOCK_MONOTONIC, &start);
-}// timer constructor
-
-void timer_c::reset ()
-{ // bm timer reset
-clock_gettime (CLOCK_MONOTONIC, &start);
-} // timer
-
-void timer_c::stop () 
-{ //bm timer end
-clock_gettime (CLOCK_MONOTONIC, &end);
-} //timer end
-
-void timer_c::result (int *sec, int *ms)
-{ // bm timer get diff
-struct timespec temp;
-//if ((end.tv_nsec-start.tv_nsec)<0)
-if (end.tv_nsec < start.tv_nsec)
-{ 
-temp.tv_sec = end.tv_sec-start.tv_sec-1;
-temp.tv_nsec = 1000000000+end.tv_nsec-start.tv_nsec; 
-} else { 
-temp.tv_sec = end.tv_sec-start.tv_sec;
-temp.tv_nsec = end.tv_nsec-start.tv_nsec;
-} // if
-
-int millisec = temp.tv_nsec / 1000000;
-
-*sec = temp.tv_sec;
-*ms = millisec;
-
-}// timer get diff
-*/
 
 void err_ctl (const int rslt, const char *msg) {
 if (rslt < 0) {
@@ -3424,23 +3485,53 @@ close (localfd);
 }// save_page
 
 
+int indexOfC (const buffer_t *str, const char c, const int start)
+{
+char *p = (char *) memchr (str->p + start, (int) c, str->len - start);
+if (p == NULL) return -1;
+
+return (p - str->p);
+} // indexOfC
 
 
+int indexOfS (const buffer_t *str, const char *s, const int start)
+{
+char *p = (char *) memmem (str->p+start, str->len-start, s, strlen(s));
+if (p == NULL) return -1;
+
+return (p - str->p);
+} // indexOfS
+
+char *C_str (const buffer_t *in, char *str, const int sz)
+{
+memcpy (str, in->p, sz);
+str [sz] = 0;
+return str;
+
+}
+
+void stopwatch_begin (stopwatch_t *sw)
+{ // bm timer begin
+clock_gettime (CLOCK_MONOTONIC, &sw->start);
+}// timer constructor
 
 
+int stopwatch_end (stopwatch_t *sw)
+{ // bm timer get diff
+struct timespec temp;
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+clock_gettime (CLOCK_MONOTONIC, &sw->end);
+//if ((end.tv_nsec-start.tv_nsec)<0)
+if (sw->end.tv_nsec < sw->start.tv_nsec)
+{ 
+temp.tv_sec = sw->end.tv_sec - sw->start.tv_sec-1;
+temp.tv_nsec = 1000000000+sw->end.tv_nsec - sw->start.tv_nsec; 
+} else { 
+temp.tv_sec = sw->end.tv_sec-sw->start.tv_sec;
+temp.tv_nsec = sw->end.tv_nsec - sw->start.tv_nsec;
+} // if
+int millisec = temp.tv_nsec / 1000000;
+sw->sec = temp.tv_sec;
+sw->msec = millisec;
+return temp.tv_sec;
+}// stop watch end

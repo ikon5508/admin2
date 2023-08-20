@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html>
+<head>
+
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<style>
+* {
+padding: 0;
+margin: 0;
+font-family: 'Popins', sans-serif;
+box-sizing: border-box;
+}
+
+body {
+background: #454545;
+color: #fff;
+
+}
+
+.options-btn {
+width: 80px;
+height: 80px;
+background: black;
+display: flex;
+border-radius: 50%;
+
+align-items: center;
+justify-content: center;
+text-decoration: none;
+border-radius: 50%;
+color: green;
+font-size: 40px;
+box-shadow: 2px 2px 5px rgba(0,0,0,0.25);
+position: fixed;
+right: 20px;
+bottom: 20%;
+transition: background 0.25s;
+z-index: 3;
+}
+
+#textarea {
+width: 100%;
+height: 50vh;
+background: #1f1f1f;
+color: #fff;
+padding: 10px 20px;
+border: 0;
+outline: 0;
+font-size: 18px;
+}
+
+#overlay {
+position: fixed;
+display: none;
+width: 85%;
+height: 350px;
+right: 75px;
+top: auto;
+bottom: 150px;
+//background-color: rgba(0,0,0,0.5);
+background-color: #252122;
+border-radius:50px;
+z-index: 2;
+cursor: pointer;
+border: yellow, 1px, solid;
+}
+
+#ccp {
+position: absolute;
+bottom: 10px;
+right: 10px;
+font-size:24px;
+margin:10px;
+
+}
+.overlay-items {
+font-size:36px;
+border-radius:10px;
+border: 15px;
+color:#00ff00;
+background-color:#333333;
+margin:10px;
+}
+
+
+.square_btn{
+display: inline-block;
+padding: 0.25em 0.25em;
+text-decoration: none;
+background: #333333;
+/*background: #668ad8;Button Color*/
+/*color: #4868ad;Use Darker Color*/
+color: #00ff00;
+box-shadow: 0px 2px 2px rgba(0, 0, 0, 0.29);
+border-bottom: solid 3px #627295;
+border-radius: 10px;
+/*font-weight: bold;*/
+text-shadow: 1px 1px 1px rgba(255, 255, 255, 0.5);
+font-size:36px;
+}
+
+.square_btn:active   {
+-ms-transform: translateY(4px);
+-webkit-transform: translateY(4px);
+transform: translateY(4px);
+box-shadow: 0px 0px 1px rgba(0, 0, 0, 0.2);
+border-bottom: none;
+}
+
+#editor {
+/*        margin: 0;
+        position: fixed;
+        top: 0px;
+        bottom: 0px;
+        left: 0;
+        right: 0;
+*/
+position: absolute;
+width: 100%;
+height: 100%;
+background: #1f1f1f;
+color: #fff;
+padding: 10px 20px;
+border: 0;
+outline: 0;
+font-size: 18px;
+}
+</style>
+<title> TA editor</title>
+
+</head>
+<body>
+
+
+<textarea id="editor">DELIMETER</textarea>
+<div id="overlay">
+
+	<select class="overlay-items">
+		<option>fnt-sz</option>
+	</select>
+
+	<select class="overlay-items">
+		<option>bookmarks</option>
+	</select>
+
+	<select class="overlay-items">
+		<option>functions</option>
+	</select>
+
+	<br>
+
+<button type="button" class="square_btn" class="overlay-items" onclick="cut()" value="cut">SAVE</input>
+<div id="ccp">
+<input type="checkbox" class="overlay-items" onclick="cut()"></input>
+<button type="button" class="overlay-items" onclick="cut()" value="cut">CUT</input>
+<button type="button" class="overlay-items" onclick="cut()" value="cut">COPY</input>
+<button type="button" class="square_btn" class="overlay-items" onclick="cut()" value="cut">PASTE</input>
+</div>
+</div>
+
+<a href="javascript: toggleO ()" class="options-btn">O</a>
+
+
+<script>
+let editor = document.getElementById("editor");
+
+
+
+fetch ("admin.c")
+.then(res => res.text()) 
+.then(res => editor.value = res)
+
+.catch(err => window.alert(err));
+
+
+
+	var togglestate = 0;
+function on() {
+document.getElementById("overlay").style.display = "block";
+}
+
+
+function off() {
+document.getElementById("overlay").style.display = "none";
+togglestate = 0;
+
+}
+function run () {
+
+let htmlcode = document.getElementById("textarea").innerText;
+let output = document.getElementById("output");
+
+output.contentDocument.body.innerHTML = htmlcode;
+
+}
+
+function toggleO () {
+    let obj = document.getElementById("overlay");
+
+if (togglestate == 0){
+    obj.style.display = "block";
+    togglestate = 1;
+}else if (togglestate == 1) {
+    obj.style.display = "none";
+    togglestate = 0;
+}
+}
+</script>
+
+</body>
+</html>

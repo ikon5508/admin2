@@ -28,26 +28,33 @@ font-size:18px;
 }</style>
 </head>
 <body>
-<form name="myf" enctype="multipart/form-data" method="post">
+<form name="myf" enctype="multipart/form-data" action="/upload/testdir" method="post">
+<input type="hidden" id="fsize" name="fsize" value="none">     
 
-<input type="file" name="myFile" id="myFile">
+<input type="file" name="myFile" id="myFile" multiple>
 
-<a href="javascript: procme()">Single Upload</a> 
+<a href="javascript: procme()">Search</a> 
       
 <!--  <input type="button" value="upload" onclick="procme ()">-->
 </form>
 
 <script>
 
+
+document.getElementById("demo").innerHTML = "<a href=www.google.com>google</a>";
 function procme () {
-//let formid = document.getElementById('form_id');
 
-let action_path = "/sup" + location.pathname;
-	
-document.forms["myf"].action = (action_path);
-document.forms["myf"].submit ();
+let filedata = document.getElementById("myFile");
 
+var i = 0;
+var str = filedata.files.length;
 
+for (i = 0; i < filedata.files.length; ++i)
+    str += ':' + filedata.files[i].size;
+    
+document.getElementById("fsize").value = str;    
+    
+document.forms["myf"].submit();  
 }
 
 </script>
