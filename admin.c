@@ -89,6 +89,7 @@ typedef struct _stopwatch stopwatch_t;
 // own
 // edit
 // resize
+// nullterm
 
 struct buffer_data
 {
@@ -139,6 +140,8 @@ enum rtype
 
 struct request_data
 {
+    
+char cookie [SMBUFF_SZ];
 char url [SMBUFF_SZ];
 char params [SMBUFF_SZ];
 const char *mode_text;
@@ -438,54 +441,34 @@ return 1;
 } // get_action
 
 
-int send_mredirect (const int fd, const char *msg, const char *uri)
-{ // bm send m-redirect
-char outbuff [SMBUFF_SZ];
-char head [SMBUFF_SZ];
-
-int doclen = sprintf (outbuff, "<html><body><script>window.alert(\"%s\"); window.location=\"%s\";</script></body></html>", msg, uri);
-
-
-
-int headlen = sprintf (head, "%s%s%s%s%d\n\n", hthead, conthtml, connclose, contlen, doclen);
-
-//sock_writeold (fd, head, headlen);
-//sock_writeold (fd, outbuff, doclen);
-
-return 1;
-} //send_mredirect
-
-int send_redirect (const int fd, const char *uri)
+int send_redirect (const io_t io, const char *uri)
 { // bm send redirect
 char outbuff [SMBUFF_SZ];
 char head [SMBUFF_SZ];
 
 int doclen = sprintf (outbuff, "<html><body><script>window.location=\"%s\";</script></body></html>", uri);
 
-
-
 int headlen = sprintf (head, "%s%s%s%s%d\n\n", hthead, conthtml, connclose, contlen, doclen);
-
-//sock_writeold (fd, head, headlen);
-//sock_writeold (fd, outbuff, doclen);
+io_write (io, head, headlen);
+io_write (io, outbuff, doclen);
 
 return 1;
 } //send_redirect
 
 
-int send_reload (const int fd, const char *uri)
+int send_reload (const io_t io)
 { // bm send reload
 char outbuff [SMBUFF_SZ];
 char head [SMBUFF_SZ];
 
-int doclen = sprintf (outbuff, "<html><body><script>window.location=\"%s\";</script></body></html>", uri);
 
+int doclen = sprintf (outbuff, "<html><body><script>window.location=window.location;</script></body></html>");
 
 
 int headlen = sprintf (head, "%s%s%s%s%d\n\n", hthead, conthtml, connclose, contlen, doclen);
 
-//sock_writeold (fd, head, headlen);
-//sock_writeold (fd, outbuff, doclen);
+io_write (io, head, headlen);
+io_write (io, outbuff, doclen);
 
 return 1;
 } //send_reload
@@ -736,22 +719,51 @@ else killme ("kill parent");
 } // post config
 
 
-struct nvpair {
-char *name;
-buffer_t value;
-struct nvpair *next;
-};
 
-int multiple_parse (struct nvpair *out, const struct request_data *request)
+int multiple_parse (const buffer_t *data, const int offset, const buffer_t *boundary, char *name, const int name_len, struct buffer_data *value)
 { // bm multiple_file
-printf ("multiple files\n");
+printf ("multiple parse\n");
+//save_buffer (data, "login_data.txt");
+
+
+
+int d1 = indexOfS (data, "name=", offset);
+if (d1 == -1) return -1;
+int d2 = indexOfC (data, '\"', d1);
+printf ("d1 %d, d2 %d\n", d1, d2);
+
+int len = d2 - d1-1;
+if (len > name_len) {printf("namelen adj\n"); len=name_len;}
+memcpy (name, data->p+d1+6, len);
+name [len] = 0;
+//printf (" value name: [%s]\n", name);
+
+
+
+int start = d2 + 10;
+
+char *p1 = memmem (data->p+start, data->len-start, boundary->p, boundary->len);
+if (p1 == NULL) {return -1;}
+	
+int endoff = p1 - data->p - 4;
+len = endoff - start;
+len = (len > value->max)?value->max: len;
+
+value->len = len;
+printf ("value len %d\n", len);
+memcpy (value->p, data->p + start, len);
+value->p[len] = 0;
+return endoff;
+}// multiple parse
+
+int post_login (const struct request_data *request)
+{
+printf ("post login %lu\n", request->content_len);
 
 buffer_t data = init_buffer (request->content_len);
 buffer_t boundary = init_buffer (SMBUFF_SZ);
 
-printf ("MULTIPLE content len: %lu\n", request->content_len);
 int rtn = parse_boundary (request->mainbuff, &boundary);
-
 if (rtn) 
 {
 printf ("started in 1st xmission\n");
@@ -760,80 +772,54 @@ data.len = request->mainbuff->len - rtn;
 }
 
 data.len = io_read (request->io, data.p, data.len, data.max);
-if (data.len != request->content_len)
-      	printf ("content len %lu!= %d\n", request->content_len, data.len);
+if (data.len != request->content_len) printf ("content len !=\n");
+
+buffer_t nvalue = init_buffer (100);
+buffer_t pvalue = init_buffer (100);
+
+char name[100];
+
+rtn = multiple_parse (&data, 0, &boundary, name, 100, &nvalue);
+multiple_parse (&data, rtn, &boundary, name, 100, &pvalue);
 
 
-int item_count = 0;
-struct nvpair *current = out;
 
-int offset = 0;
-while (1)
-//for (int i = 0; i < 10; ++i)
+//printf ("name: %s, pass: %s\n", nvalue.p, pvalue.p);
+bool passed = false;
+
+if (!(strcmp (nvalue.p, "dad") && strcmp (pvalue.p, "master14")))
 {
-++item_count;
-printf ("item %d (%d)\n", item_count, offset);
+printf ("dad passed\n");
+// bm woke did
+//printf ("[%s]\n", request->path);
+//printf ("[%s]\n", request->full_path);
+//send_redirect (request->io, request->path);
 
-int d1 = indexOfS (&data, "name=", offset);
-if (d1 == -1) break;
+char outbuff [SMBUFF_SZ];
+char head [SMBUFF_SZ];
 
-// add new node if current != data
-//
-if (item_count > 1)
-{
-struct nvpair *nw = malloc (sizeof(struct nvpair));
-current->next = nw;
-current = nw;
-} // if list grow
+//int doclen = sprintf (outbuff, "<html><body><script>document.cookie = \"id=dad\";window.location=\"%s\";</script></body></html>", request->path);
 
 
-int d2 = indexOfC (&data, '\n', d1);
-printf ("d1 %d, d2 %d\n", d1, d2);
-int len = d2 - d1 - 12;
+int doclen = sprintf (outbuff, "<html><body><script>window.location=\"%s\";</script></body></html>", request->path);
 
-current->name = malloc (len + 1);
-memcpy (current->name, data.p+d1+10, len);
-current->name [len] = 0;
 
-printf (" -%d: [%s]", item_count, current->name);
+//char *cookie = "Set-Cookie: id=a3fWa; SameSite=None; Expires=Mon, 28 Aug 2023 07:28:00 GMT; Secure; path=/\n";
+char *cookie = "Set-Cookie: id1=a3fWa1; SameSite=None; MAx-Age=6000; Secure; path=/\n";
 
-d1 = indexOfC (&data, '\n', d2 + 10);
-d1 += 3;
+int headlen = sprintf (head, "%s%s%s%s%s%d\n\n", hthead, conthtml, cookie, connclose, contlen, doclen);
 
-int start = d1;
+printf ("head\n[%s]\n", head);
+io_write (request->io, head, headlen);
+io_write (request->io, outbuff, doclen);
+}else{
+    send_txt (request->io, "login failed");
+}
 
-char *p1 = memmem (data.p+start, data.len-start, boundary.p, boundary.len);
-if (p1 == NULL) 
-killme ("no boundary");
-	
-int endoff = p1 - data.p - 4;
-len = endoff - start;
-offset = endoff;
-//write (localfd, data.p + start, endoff - start);
-current->value = init_buffer (len);
-memcpy (current->value.p, data.p+start, len);
-current->value.len = len;
-printf ("[%.*s]", current->value.len, current->value.p);
-} // loop
-printf ("\n");
+//send_txt (request->io, "uh huh");
 
 free (data.p);
 free (boundary.p);
-send_txt (request->io, "fucking made it");
-
-return item_count;
-}// multiple parse
-
-int post_login (const struct request_data *request)
-{
-printf ("post login\n");
-struct nvpair *data;
-
-int item_count = multiple_parse (data, request);
-
-printf ("item count %d\n", item_count);
-
-send_txt (request->io, "uh huh");
 return 1;
 
 
@@ -988,6 +974,12 @@ s = pthread_sigmask(SIG_BLOCK, &set, NULL);
 if (s != 0)
 killme("pthread_sigmask");
 */
+
+// when client kills upload, app stalls
+
+//multiple_parse (data, start, boundary, name, value);
+
+
 signal(SIGPIPE, SIG_IGN);
 
 for (int i = 1; i < argc; ++i)
@@ -1111,7 +1103,6 @@ memcpy (boundary->p, mainbuff->p + d1, boundary->len);
 boundary->p [boundary->len] = 0;
 boundary->len = trim (boundary->p);
 
-//save_buffer (mainbuff, "post.txt");
 //printf ("head [%s]\n", boundary);
 
 // check for content in 1st xmission (firefox)
@@ -1122,7 +1113,6 @@ d1 = p1 - mainbuff->p;
 
 //d2 = mainbuff->len - d1;
 rtn = d1;
-//save_buffer (&inbuff, "boundary.txt");
 //printf ("boundary, done firefox\n"); 
 }
 end_point:;
@@ -1182,7 +1172,10 @@ int end  = data.len - boundary.len - 8;
 write (localfd, data.p + start, end - start);
 close (localfd);
 
-send_txt (request->io, "it worked");
+send_reload (request->io);
+
+
+//send_txt (request->io, "it worked");
 free (data.p);
 free (boundary.p);
 return 0;
@@ -1216,11 +1209,8 @@ int filecount = 0;
 
 int offset = 0;
 while (1)
-//for (int i = 0; i < 10; ++i)
 {
 ++filecount;
-	//printf ("file %d (%d)\n", i, offset);
-
 int d1 = indexOfS (&data, "filename=", offset);
 if (d1 == -1) break;
 int d2 = indexOfC (&data, '\n', d1);
@@ -1246,8 +1236,7 @@ d1 += 3;
 int start = d1;
 
 char *p1 = memmem (data.p+start, data.len-start, boundary.p, boundary.len);
-if (p1 == NULL) 
-killme ("no boundary");
+if (p1 == NULL) {close (localfd); break;}
 	
 int endoff = p1 - data.p - 4;
 offset = endoff;
@@ -1269,9 +1258,6 @@ int single_upload (const struct request_data *request)
 { // bm post_file
 buffer_t data = init_buffer (request->content_len);
 buffer_t boundary = init_buffer (SMBUFF_SZ);
-
-// irrelevant
-//printf ("content len: %lu\n", request->content_len);
 
 int rtn = parse_boundary (request->mainbuff, &boundary);
 
@@ -1307,17 +1293,8 @@ killme ("cannot open file to save");
 d1 = indexOfC (&data, '\n', d2 + 10);
 d1 += 3;
 
-//printf ("endl: %d\n", d1);
-//while (data.p[d1] == 10 || data.p[d1] == 13)
-//++d1;
-
 int start = d1;
 int endoff  = data.len - boundary.len - 10;
-
-//while (data.p[endoff] == 10 || data.p[endoff] == 13 || data.p[endoff] == '-')
-//{--endoff;
-//printf ("adjustng\n");
-//}
 
 write (localfd, data.p + start, endoff - start);
 close (localfd);
@@ -1420,8 +1397,6 @@ head.len = sprintf (head.p, "%s%s%s%d\n\n", hthead, conthtml, contlen, dir_templ
 io_write (request.io, head.p, head.len);
 io_write (request.io, dir_template.p, dir_template.len);
 closedir (dp);
-//save_buffer (dir_list, "dir_list.txt");
-//save_buffer (dir_template, "dir_template.txt");
 
 
 free (dir_template.p);
@@ -1508,6 +1483,8 @@ return r;
 
 int parse_request (struct request_data *request, const int fd, const struct buffer_data inbuff)
 { // bm parse_request
+
+save_buffer (&inbuff, "request.txt");
 memset (request, 0, sizeof (struct request_data));
 
 const char method = inbuff.p [0];
@@ -1520,6 +1497,20 @@ request->mode = root;
 //printf ("request method is: %c\n", request->method);
 
 request->fd = fd;
+
+int d1 = indexOfS (&inbuff, "cookie:", 0);
+if (d1 > 0)
+{
+int d2 = indexOfC (&inbuff, '\n', d1);
+memcpy (request->cookie, inbuff.p+d1+8, d2-d1);
+request->cookie[d2-d1] = 0;
+printf ("cookie found!: [%s]\n", request->cookie);
+
+}
+
+
+
+
 
 const int url_len = extract_CC (inbuff, request->url, SMBUFF_SZ, ' ', ' ');
 if (url_len == 0) return 0;
@@ -1544,12 +1535,6 @@ request->params [url_len - path_end] = 0;
 //printf ("URL Params: %s\n", request->params);
 } // if uri params
 
-// wrong...need starts with function
-//
-//p1 = memmem (request->url.p, edit_mode_len, edit_mode, edit_mode_len);
-
-//int d1 = indexOfS (&request->url, edit_mode, 0);
-
 p1 = memmem (request->url, edit_mode_len, edit_mode, edit_mode_len);
 if (p1 != NULL) {
 path_start = edit_mode_len;
@@ -1564,22 +1549,6 @@ path_start = action_mode_len;
 request->mode = action;
 request->mode_text = action_mode;
 } // if action_mode
-
-/*
-p1 = strstr (request->url, blog_mode);
-if (p1 != NULL) {
-path_start = blog_mode_len;
-request->mode = blog;
-printf ("blog mode det\n");
-} // if post blog_mode
-
-
-p1 = strstr (request->url, sup_mode);
-if (p1 != NULL) {
-path_start = sup_mode_len;
-request->mode = sup;
-} // if upload_mode
-*/
 
 p1 = memmem (request->url, mup_mode_len, mup_mode, mup_mode_len);
 if (p1 != NULL) {
@@ -1599,7 +1568,6 @@ if (p1 != NULL) {
 request->mode = ace_builds;
 request->mode_text = ace_builds_mode;
 base_path = settings.ace_builds;
-
 } // if ace_builds
 
 
@@ -1668,8 +1636,9 @@ int len = d2 - d1;
 memcpy (temp, inbuff.p + d1 + termlen, len - termlen - 1);
 
 request->content_len = atol (temp);
+
+//printf ("[%.*s]\nPOST content_len [%lu]\n", inbuff.len, inbuff.p, request->content_len);
 return 1;
-//printf ("[%lu]\n", request->content_len);
 } //if post  get cont len
 
 printf ("method [%c] \n%s\nparse request end of function (error)\n", request->method, inbuff.p);
@@ -2339,8 +2308,9 @@ if (rtn > seconds)
 {
 seconds = rtn;
 int newbytes = len - oldbytes;
-int mb = 0, kb = 0, b = 0;
+if (newbytes == 0) {printf ("\nstalled\n"); return len;}
 
+int mb = 0, kb = 0, b = 0;
 hbytes (&mb, &kb, &b, newbytes);
 
 if (kb > 0)
@@ -2355,20 +2325,6 @@ oldbytes = len;
 } // while
 printf ("\n");
 stopwatch_end (&timer);
-
-
-
-
-
-int rate = len / timer.sec;	
-int mb = 0, kb = 0, b = 0;
-hbytes (&mb, &kb, &b, rate);
-
-
-if (kb > 0)
-printf ("average %d.%d KB/S\n", kb, b);
-else
-printf ("average  %d B/S\n", b);
 
 return len;  
 } // tla_read
